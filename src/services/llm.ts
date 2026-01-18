@@ -1,11 +1,6 @@
 import OpenAI from 'openai';
 import type { PersonExtractionResult } from '../types';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 /**
  * Pass A: Extract structured person data from transcript
  *
@@ -22,6 +17,11 @@ export async function extractPeopleFromTranscript(
 ): Promise<PersonExtractionResult> {
   try {
     console.log('Running LLM Pass A: Person extraction...');
+
+    // Initialize OpenAI client here (lazy initialization)
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     const prompt = `You are analyzing a personal voice journal entry. Extract information about people mentioned.
 
@@ -102,6 +102,11 @@ export async function generateDailySummary(
 ): Promise<string> {
   try {
     console.log('Running LLM Pass B: Daily summary generation...');
+
+    // Initialize OpenAI client here (lazy initialization)
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     const prompt = `You are summarizing a personal voice journal entry.
 

@@ -1,10 +1,11 @@
-import express from 'express';
+// IMPORTANT: Load environment variables FIRST before any other imports
 import * as dotenv from 'dotenv';
+dotenv.config();
+
+// Now import everything else (these can safely use process.env)
+import express from 'express';
 import webhookRouter from './routes/webhook';
 import { closePool } from './database/client';
-
-// Load environment variables from .env file
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;

@@ -1,11 +1,6 @@
 import OpenAI from 'openai';
 import { createReadStream } from 'fs';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 /**
  * Transcribes an audio file to text using OpenAI's Whisper API
  *
@@ -17,6 +12,12 @@ export async function transcribeAudio(
 ): Promise<string> {
   try {
     console.log(`Transcribing audio file: ${audioFilePath}`);
+
+    // Initialize OpenAI client here (lazy initialization)
+    // This ensures environment variables are loaded before we try to use them
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     // Create a read stream from the audio file
     const audioStream = createReadStream(audioFilePath);
