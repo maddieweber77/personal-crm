@@ -100,6 +100,21 @@ export async function createPersonUpdate(
 }
 
 /**
+ * Get daily summary for a specific date
+ * Returns null if no summary exists for that date
+ */
+export async function getDailySummary(
+  date: string
+): Promise<string | null> {
+  const result = await getPool().query<DailySummary>(
+    `SELECT summary FROM daily_summaries WHERE date = $1`,
+    [date]
+  );
+
+  return result.rows[0]?.summary || null;
+}
+
+/**
  * Upsert daily summary (insert or update if date already exists)
  */
 export async function upsertDailySummary(

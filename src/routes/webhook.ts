@@ -7,6 +7,7 @@ import {
   findPersonByNameOrAlias,
   createPerson,
   createPersonUpdate,
+  getDailySummary,
   upsertDailySummary,
 } from '../database/client';
 
@@ -142,11 +143,19 @@ router.post('/twilio/recording-complete', async (req: Request, res: Response) =>
     }
 
     // === STEP 6: Run LLM Pass B - Generate daily summary ===
-    const summary = await generateDailySummary(transcript);
+    const newSummary = await generateDailySummary(transcript);
 
-    // === STEP 7: Upsert daily summary ===
+    // === STEP 7: Append to existing daily summary (don't overwrite) ===
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    await upsertDailySummary(today, summary);
+    const existingSummary = await getDailySummary(today);
+
+    // If there's already a summary today, append as new paragraph
+    // Otherwise, use the new summary as-is
+    const finalSummary = existingSummary
+      ? `${existingSummary}\n\n${newSummary}`
+      : newSummary;
+
+    await upsertDailySummary(today, finalSummary);
     console.log(`✓ Daily summary updated for ${today}`);
 
     console.log('=== Processing complete ===\n');
