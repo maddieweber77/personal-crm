@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
+import twilio from 'twilio';
+import nodemailer from 'nodemailer';
 import { downloadRecording } from '../services/audio-downloader';
 import { transcribeAudio } from '../services/transcription';
 import { extractPeopleFromTranscript, generateDailySummary } from '../services/llm';
+import { handleQuery } from '../services/retrieval';
 import {
   createVoiceEntry,
   findPersonByNameOrAlias,
@@ -164,5 +167,90 @@ router.post('/twilio/recording-complete', async (req: Request, res: Response) =>
     console.error('Error processing recording:', error);
   }
 });
+
+/**
+ * SMS webhook endpoint - handles incoming text messages
+ * Processes queries and responds via SMS or email
+ */
+router.post('/twilio/sms', async (req: Request, res: Response) => {
+  try {
+    const from = req.body.From;
+    const body = req.body.Body;
+
+    console.log('\n=== Incoming SMS ===');
+    console.log(`From: ${from}`);
+    console.log(`Message: ${body}`);
+
+    // Security: Only allow messages from Maddie's number
+    const ALLOWED_NUMBER = '+17049997750';
+    if (from !== ALLOWED_NUMBER) {
+      console.log(`⛔ Rejected SMS from unauthorized number: ${from}`);
+      res.status(200).send(); // Respond with empty to prevent retries
+      return;
+    }
+
+    // Process the query
+    const responseText = await handleQuery(body);
+    console.log(`Response: ${responseText}`);
+
+    // Try to send via SMS first
+    try {
+      const twilioClient = twilio(
+        process.env.TWILIO_ACCOUNT_SID,
+        process.env.TWILIO_AUTH_TOKEN
+      );
+
+      await twilioClient.messages.create({
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: from,
+        body: responseText,
+      });
+
+      console.log('✓ Response sent via SMS');
+      res.status(200).send();
+    } catch (smsError) {
+      // SMS failed - send via email instead
+      console.log('⚠️ SMS send failed, falling back to email...');
+      console.error('SMS Error:', smsError);
+
+      await sendEmailFallback(body, responseText);
+      console.log('✓ Response sent via email');
+      res.status(200).send();
+    }
+  } catch (error) {
+    console.error('Error processing SMS:', error);
+    res.status(500).send('Error processing request');
+  }
+});
+
+/**
+ * Send response via email (fallback when SMS fails)
+ */
+async function sendEmailFallback(query: string, response: string): Promise<void> {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+  if (!gmailUser || !gmailAppPassword) {
+    console.error('⚠️ Gmail credentials not configured');
+    return;
+  }
+
+  // Create Gmail transporter
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
+  });
+
+  // Send email
+  await transporter.sendMail({
+    from: gmailUser,
+    to: gmailUser, // Send to yourself
+    subject: `CRM Query: "${query}"`,
+    text: `Your Query:\n${query}\n\n---\n\nResponse:\n${response}`,
+  });
+}
 
 export default router;

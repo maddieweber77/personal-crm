@@ -134,6 +134,60 @@ export async function upsertDailySummary(
 }
 
 /**
+ * Get all updates for a specific person by name
+ */
+export async function getPersonUpdates(personName: string): Promise<{
+  person: Person;
+  updates: PersonUpdate[];
+} | null> {
+  // Find the person
+  const person = await findPersonByNameOrAlias(personName);
+  if (!person) {
+    return null;
+  }
+
+  // Get all their updates
+  const result = await getPool().query<PersonUpdate>(
+    `SELECT * FROM person_updates
+     WHERE person_id = $1
+     ORDER BY created_at DESC`,
+    [person.id]
+  );
+
+  return {
+    person,
+    updates: result.rows,
+  };
+}
+
+/**
+ * Get all voice entries for a specific date
+ */
+export async function getVoiceEntriesByDate(date: string): Promise<VoiceEntry[]> {
+  const result = await getPool().query<VoiceEntry>(
+    `SELECT * FROM voice_entries
+     WHERE DATE(recorded_at) = $1
+     ORDER BY recorded_at ASC`,
+    [date]
+  );
+
+  return result.rows;
+}
+
+/**
+ * Get recent voice entries (last N days)
+ */
+export async function getRecentVoiceEntries(days: number = 7): Promise<VoiceEntry[]> {
+  const result = await getPool().query<VoiceEntry>(
+    `SELECT * FROM voice_entries
+     WHERE recorded_at >= NOW() - INTERVAL '${days} days'
+     ORDER BY recorded_at DESC`
+  );
+
+  return result.rows;
+}
+
+/**
  * Close the database pool (call this when shutting down the server)
  */
 export async function closePool(): Promise<void> {
