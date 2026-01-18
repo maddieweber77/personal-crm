@@ -25,7 +25,8 @@ app.use('/api', webhookRouter);
 // Start the server
 const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📞 Twilio webhook endpoint: http://localhost:${PORT}/api/twilio/recording-complete`);
+  console.log(`📞 Twilio voice endpoint: http://localhost:${PORT}/api/twilio/voice`);
+  console.log(`📝 Twilio recording endpoint: http://localhost:${PORT}/api/twilio/recording-complete`);
 });
 
 // Graceful shutdown

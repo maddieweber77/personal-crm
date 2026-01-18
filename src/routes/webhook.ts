@@ -13,6 +13,38 @@ import {
 const router = Router();
 
 /**
+ * Twilio voice webhook - called when someone calls your Twilio number
+ *
+ * This returns TwiML (XML) that tells Twilio to:
+ * 1. Play a greeting message
+ * 2. Start recording
+ * 3. Send the recording to /api/twilio/recording-complete when done
+ */
+router.post('/twilio/voice', (req: Request, res: Response) => {
+  console.log('\n=== Incoming call ===');
+  console.log(`Call SID: ${req.body.CallSid}`);
+  console.log(`From: ${req.body.From}`);
+
+  // Build the TwiML response
+  // TwiML is XML that tells Twilio what to do
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Hello! Please share your thoughts after the beep. When you're done, just hang up.</Say>
+  <Record
+    maxLength="300"
+    playBeep="true"
+    recordingStatusCallback="/api/twilio/recording-complete"
+    recordingStatusCallbackMethod="POST"
+  />
+  <Say voice="Polly.Joanna">Thank you. Goodbye.</Say>
+</Response>`;
+
+  // Send TwiML response with correct content type
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+/**
  * Twilio webhook endpoint - called when a recording is completed
  *
  * Expected POST body from Twilio:
