@@ -1,7 +1,7 @@
 import twilio from 'twilio';
 
 /**
- * Sends an SMS reminder to call and check in
+ * Makes a voice call reminder to check in
  */
 export async function sendCheckInReminder(): Promise<void> {
   try {
@@ -19,15 +19,21 @@ export async function sendCheckInReminder(): Promise<void> {
       return;
     }
 
-    // Send the SMS
-    const message = await client.messages.create({
-      body: '📞 Time to check in! Call your journal line and share what\'s on your mind. 💭',
+    // Make a voice call with TwiML
+    const call = await client.calls.create({
       from: fromNumber,
       to: toNumber,
+      // TwiML says the reminder message
+      twiml: `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Hey Maddie! This is your check-in reminder. Time to call your journal line and share what's on your mind.</Say>
+  <Pause length="1"/>
+  <Say voice="Polly.Joanna">Have a great day!</Say>
+</Response>`
     });
 
-    console.log(`✓ Reminder SMS sent: ${message.sid}`);
+    console.log(`✓ Reminder call initiated: ${call.sid}`);
   } catch (error) {
-    console.error('Failed to send reminder SMS:', error);
+    console.error('Failed to make reminder call:', error);
   }
 }
