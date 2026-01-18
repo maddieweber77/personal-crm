@@ -25,6 +25,27 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
   console.log(`Call SID: ${req.body.CallSid}`);
   console.log(`From: ${req.body.From}`);
 
+  // Security: Only allow calls from Maddie's number
+  const ALLOWED_NUMBER = '+17049997750';
+  const callerNumber = req.body.From;
+
+  if (callerNumber !== ALLOWED_NUMBER) {
+    console.log(`⛔ Rejected call from unauthorized number: ${callerNumber}`);
+
+    // Return TwiML that rejects the call
+    const rejectTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">This number is private. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+
+    res.type('text/xml');
+    res.send(rejectTwiml);
+    return;
+  }
+
+  console.log('✓ Call authorized');
+
   // Build the TwiML response
   // TwiML is XML that tells Twilio what to do
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
