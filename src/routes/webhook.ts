@@ -29,7 +29,7 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
   // TwiML is XML that tells Twilio what to do
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">Hello! Please share your thoughts after the beep. When you're done, just hang up.</Say>
+  <Say voice="Polly.Joanna">Hello Maddie! Tell me about your day and the people you interacted with. When you're done, just hang up. XOXO</Say>
   <Record
     maxLength="300"
     playBeep="true"
