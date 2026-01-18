@@ -1,7 +1,10 @@
 import axios from 'axios';
-import { createWriteStream } from 'fs';
-import { join } from 'path';
+import { createWriteStream, mkdir } from 'fs';
+import { join, dirname } from 'path';
 import { pipeline } from 'stream/promises';
+import { promisify } from 'util';
+
+const mkdirAsync = promisify(mkdir);
 
 /**
  * Downloads an audio recording from Twilio and saves it locally
@@ -22,6 +25,10 @@ export async function downloadRecording(
 
   try {
     console.log(`Downloading recording from: ${recordingUrl}`);
+
+    // Ensure the audio-files directory exists
+    const audioDir = dirname(localPath);
+    await mkdirAsync(audioDir, { recursive: true });
 
     // Download the audio file as a stream
     // Twilio requires HTTP Basic Auth (account SID + auth token)
