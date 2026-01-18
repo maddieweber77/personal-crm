@@ -227,30 +227,35 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
  * Send response via email (fallback when SMS fails)
  */
 async function sendEmailFallback(query: string, response: string): Promise<void> {
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  try {
+    const gmailUser = process.env.GMAIL_USER;
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
 
-  if (!gmailUser || !gmailAppPassword) {
-    console.error('⚠️ Gmail credentials not configured');
-    return;
+    if (!gmailUser || !gmailAppPassword) {
+      console.error('⚠️ Gmail credentials not configured - email fallback disabled');
+      console.log('To enable email fallback, set GMAIL_USER and GMAIL_APP_PASSWORD in Railway');
+      return;
+    }
+
+    // Create Gmail transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailAppPassword,
+      },
+    });
+
+    // Send email
+    await transporter.sendMail({
+      from: gmailUser,
+      to: gmailUser, // Send to yourself
+      subject: `CRM Query: "${query}"`,
+      text: `Your Query:\n${query}\n\n---\n\nResponse:\n${response}`,
+    });
+  } catch (error) {
+    console.error('Failed to send email fallback:', error);
   }
-
-  // Create Gmail transporter
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: gmailUser,
-      pass: gmailAppPassword,
-    },
-  });
-
-  // Send email
-  await transporter.sendMail({
-    from: gmailUser,
-    to: gmailUser, // Send to yourself
-    subject: `CRM Query: "${query}"`,
-    text: `Your Query:\n${query}\n\n---\n\nResponse:\n${response}`,
-  });
 }
 
 export default router;
