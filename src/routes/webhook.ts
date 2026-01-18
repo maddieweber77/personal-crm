@@ -193,7 +193,10 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
     const responseText = await handleQuery(body);
     console.log(`Response: ${responseText}`);
 
-    // Try to send via SMS first
+    // Respond to Twilio immediately
+    res.status(200).send();
+
+    // Try to send via SMS (but don't wait for success/failure)
     try {
       const twilioClient = twilio(
         process.env.TWILIO_ACCOUNT_SID,
@@ -207,16 +210,14 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
       });
 
       console.log('✓ Response sent via SMS');
-      res.status(200).send();
     } catch (smsError) {
-      // SMS failed - send via email instead
-      console.log('⚠️ SMS send failed, falling back to email...');
+      console.log('⚠️ SMS send failed');
       console.error('SMS Error:', smsError);
-
-      await sendEmailFallback(body, responseText);
-      console.log('✓ Response sent via email');
-      res.status(200).send();
     }
+
+    // ALWAYS send via email as well (for permanent record)
+    await sendEmailFallback(body, responseText);
+    console.log('✓ Response sent via email');
   } catch (error) {
     console.error('Error processing SMS:', error);
     res.status(500).send('Error processing request');
