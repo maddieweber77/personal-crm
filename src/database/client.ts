@@ -6,15 +6,25 @@ import type {
   DailySummary,
 } from '../types';
 
-// Create a connection pool (more efficient than creating new connections each time)
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+// Lazy initialization: create pool on first use to ensure env vars are loaded
+let pool: Pool | null = null;
 
-// Test the connection
-pool.on('error', (err) => {
-  console.error('Unexpected database error:', err);
-});
+function getPool(): Pool {
+  if (!pool) {
+    // Create pool on first access (ensures dotenv has loaded)
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+
+    // Test the connection
+    pool.on('error', (err) => {
+      console.error('Unexpected database error:', err);
+    });
+
+    console.log('✓ Database pool initialized');
+  }
+  return pool;
+}
 
 /**
  * Find a person by name or alias
@@ -23,7 +33,7 @@ pool.on('error', (err) => {
 export async function findPersonByNameOrAlias(
   nameOrAlias: string
 ): Promise<Person | null> {
-  const result = await pool.query<Person>(
+  const result = await getPool().query<Person>(
     `SELECT * FROM people
      WHERE LOWER(name) = LOWER($1)
      OR $1 = ANY(SELECT LOWER(unnest(aliases)))
@@ -42,7 +52,7 @@ export async function createPerson(
   aliases: string[],
   relationship: 'friend' | 'family' | 'coworker' | 'unknown'
 ): Promise<Person> {
-  const result = await pool.query<Person>(
+  const result = await getPool().query<Person>(
     `INSERT INTO people (name, aliases, relationship)
      VALUES ($1, $2, $3)
      RETURNING *`,
@@ -60,7 +70,7 @@ export async function createVoiceEntry(
   audioPath: string,
   transcript: string
 ): Promise<VoiceEntry> {
-  const result = await pool.query<VoiceEntry>(
+  const result = await getPool().query<VoiceEntry>(
     `INSERT INTO voice_entries (recorded_at, audio_path, transcript)
      VALUES ($1, $2, $3)
      RETURNING *`,
@@ -79,7 +89,7 @@ export async function createPersonUpdate(
   updateText: string,
   context: string | null
 ): Promise<PersonUpdate> {
-  const result = await pool.query<PersonUpdate>(
+  const result = await getPool().query<PersonUpdate>(
     `INSERT INTO person_updates (person_id, voice_entry_id, update_text, context)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
@@ -96,7 +106,7 @@ export async function upsertDailySummary(
   date: string,
   summary: string
 ): Promise<DailySummary> {
-  const result = await pool.query<DailySummary>(
+  const result = await getPool().query<DailySummary>(
     `INSERT INTO daily_summaries (date, summary)
      VALUES ($1, $2)
      ON CONFLICT (date)
@@ -112,5 +122,7 @@ export async function upsertDailySummary(
  * Close the database pool (call this when shutting down the server)
  */
 export async function closePool(): Promise<void> {
-  await pool.end();
+  if (pool) {
+    await pool.end();
+  }
 }
