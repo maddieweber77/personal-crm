@@ -4,8 +4,10 @@ dotenv.config();
 
 // Now import everything else (these can safely use process.env)
 import express from 'express';
+import cron from 'node-cron';
 import webhookRouter from './routes/webhook';
 import { closePool } from './database/client';
+import { sendCheckInReminder } from './services/reminder';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +30,19 @@ const server = app.listen(PORT, () => {
   console.log(`📞 Twilio voice endpoint: http://localhost:${PORT}/api/twilio/voice`);
   console.log(`📝 Twilio recording endpoint: http://localhost:${PORT}/api/twilio/recording-complete`);
 });
+
+// Schedule SMS reminders every 4 hours during awake hours
+// Runs at: 8am, 12pm, 4pm, 8pm (US Eastern Time)
+// Cron format: minute hour day month weekday
+// "0 8,12,16,20 * * *" = at minute 0 of hours 8, 12, 16, 20
+cron.schedule('0 8,12,16,20 * * *', () => {
+  console.log('⏰ Running scheduled reminder check...');
+  sendCheckInReminder();
+}, {
+  timezone: "America/New_York" // Use Eastern Time
+});
+
+console.log('⏰ SMS reminders scheduled: 8am, 12pm, 4pm, 8pm ET');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
