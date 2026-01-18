@@ -18,11 +18,20 @@ export async function parseQuery(userQuery: string): Promise<ParsedQuery> {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
+    // Get current date for context
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
     const prompt = `Parse this user query and determine what information they want to retrieve.
+
+IMPORTANT: Today's date is ${todayStr}. Yesterday was ${yesterdayStr}.
 
 Query types:
 - "person": Asking about a specific person (e.g., "Tell me about Sarah", "What do I know about Mike?")
-- "date": Asking about a specific date (e.g., "What did I do yesterday?", "Tell me about January 15")
+- "date": Asking about a specific date (e.g., "What did I do yesterday?", "Tell me about January 15", "my day today")
 - "recent": Asking about recent activity (e.g., "What happened this week?", "Recent updates")
 - "unknown": Cannot determine what they want
 
@@ -36,8 +45,9 @@ Return ONLY valid JSON in this exact format:
 
 Examples:
 - "Tell me about Sarah" → {"type": "person", "personName": "Sarah"}
-- "What did I do yesterday?" → {"type": "date", "date": "2026-01-17"}
+- "What did I do yesterday?" → {"type": "date", "date": "${yesterdayStr}"}
 - "What happened this week?" → {"type": "recent", "days": 7}
+- "Tell me about my day today" → {"type": "date", "date": "${todayStr}"}
 
 User query: ${userQuery}`;
 
