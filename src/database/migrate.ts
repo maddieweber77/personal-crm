@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
@@ -15,15 +15,23 @@ async function runMigrations() {
   try {
     console.log('Starting database migrations...');
 
-    // Read the migration file
-    const migrationPath = join(process.cwd(), 'migrations', '001_create_tables.sql');
-    const migrationSql = readFileSync(migrationPath, 'utf-8');
+    // Get all migration files in order
+    const migrationsDir = join(process.cwd(), 'migrations');
+    const migrationFiles = readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort(); // Sorts alphabetically (001, 002, etc.)
 
-    // Run the migration
-    await pool.query(migrationSql);
+    // Run each migration
+    for (const file of migrationFiles) {
+      console.log(`Running migration: ${file}`);
+      const migrationPath = join(migrationsDir, file);
+      const migrationSql = readFileSync(migrationPath, 'utf-8');
 
-    console.log('✓ Migration 001_create_tables.sql completed successfully');
-    console.log('\nDatabase is ready!');
+      await pool.query(migrationSql);
+      console.log(`✓ Migration ${file} completed successfully`);
+    }
+
+    console.log('\nAll migrations completed! Database is ready!');
   } catch (error) {
     console.error('Migration failed:', error);
     throw error;
