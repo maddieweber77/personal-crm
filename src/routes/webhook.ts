@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import twilio from 'twilio';
-import nodemailer from 'nodemailer';
+import sendgrid from '@sendgrid/mail';
 import { downloadRecording } from '../services/audio-downloader';
 import { transcribeAudio } from '../services/transcription';
 import { extractPeopleFromTranscript, generateDailySummary } from '../services/llm';
@@ -225,37 +225,32 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
 });
 
 /**
- * Send response via email (fallback when SMS fails)
+ * Send response via email using SendGrid
  */
 async function sendEmailFallback(query: string, response: string): Promise<void> {
   try {
-    const gmailUser = process.env.GMAIL_USER;
-    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'maddieweber7@gmail.com';
+    const toEmail = 'maddieweber7@gmail.com';
 
-    if (!gmailUser || !gmailAppPassword) {
-      console.error('⚠️ Gmail credentials not configured - email fallback disabled');
-      console.log('To enable email fallback, set GMAIL_USER and GMAIL_APP_PASSWORD in Railway');
+    if (!sendgridApiKey) {
+      console.error('⚠️ SendGrid API key not configured - email disabled');
+      console.log('To enable email, set SENDGRID_API_KEY in Railway');
       return;
     }
 
-    // Create Gmail transporter
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: gmailUser,
-        pass: gmailAppPassword,
-      },
-    });
+    // Initialize SendGrid
+    sendgrid.setApiKey(sendgridApiKey);
 
-    // Send email
-    await transporter.sendMail({
-      from: gmailUser,
-      to: gmailUser, // Send to yourself
+    // Send email via SendGrid API
+    await sendgrid.send({
+      from: fromEmail,
+      to: toEmail,
       subject: `CRM Query: "${query}"`,
       text: `Your Query:\n${query}\n\n---\n\nResponse:\n${response}`,
     });
   } catch (error) {
-    console.error('Failed to send email fallback:', error);
+    console.error('Failed to send email:', error);
   }
 }
 
