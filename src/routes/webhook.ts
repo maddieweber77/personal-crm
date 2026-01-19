@@ -61,7 +61,7 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
 <Response>
   <Say voice="Polly.Joanna">Hi Maddie! What's going on?</Say>
   <Record
-    maxLength="300"
+    maxLength="600"
     playBeep="true"
     recordingStatusCallback="/api/twilio/recording-complete"
     recordingStatusCallbackMethod="POST"
