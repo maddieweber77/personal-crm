@@ -1,5 +1,14 @@
 import { analyzeImage } from './image-analyzer';
-import { createManualEntry } from '../database/client';
+import { extractPeopleFromTranscript } from './llm';
+import {
+  createManualEntry,
+  findPersonByNameOrAlias,
+  createPerson,
+  createPersonUpdate,
+  updateLastContactDate,
+  createFriendEvent,
+  createFriendSituation,
+} from '../database/client';
 
 /**
  * Handles storing information sent by the user (text or screenshots)
@@ -50,6 +59,84 @@ export async function handleStoreRequest(
     );
 
     console.log(`✓ Manual entry stored: ${entry.id}`);
+
+    // Extract people and update people table (just like voice calls do)
+    try {
+      const personExtractionResult = await extractPeopleFromTranscript(extractedContent);
+
+      for (const extractedPerson of personExtractionResult.people) {
+        // Try to find existing person by name or alias
+        let person = await findPersonByNameOrAlias(extractedPerson.name);
+
+        // If not found, create new person
+        if (!person) {
+          person = await createPerson(
+            extractedPerson.name,
+            extractedPerson.aliases,
+            extractedPerson.relationship
+          );
+          console.log(`✓ Created new person: ${person.name}`);
+        } else {
+          console.log(`✓ Found existing person: ${person.name}`);
+        }
+
+        // Update last contact date if contact was mentioned
+        if (personExtractionResult.mentioned_contact) {
+          await updateLastContactDate(person.id, new Date());
+          console.log(`✓ Updated last contact date for ${person.name}`);
+        }
+
+        // Create person_updates for each update
+        for (const update of extractedPerson.updates) {
+          await createPersonUpdate(
+            person.id,
+            entry.id,
+            update.update_text,
+            update.context
+          );
+        }
+        console.log(`✓ Created ${extractedPerson.updates.length} updates for ${person.name}`);
+
+        // Create friend events
+        if (extractedPerson.events && extractedPerson.events.length > 0) {
+          for (const event of extractedPerson.events) {
+            const eventDate = event.event_date ? new Date(event.event_date) : null;
+            const isRecurring = event.event_type === 'birthday';
+
+            await createFriendEvent(
+              person.id,
+              event.event_type,
+              event.event_description,
+              eventDate,
+              event.event_date_approximate,
+              isRecurring,
+              entry.id
+            );
+          }
+          console.log(`✓ Created ${extractedPerson.events.length} events for ${person.name}`);
+        }
+
+        // Create friend situations
+        if (extractedPerson.situations && extractedPerson.situations.length > 0) {
+          for (const situation of extractedPerson.situations) {
+            const startedAt = new Date(situation.started_at);
+
+            await createFriendSituation(
+              person.id,
+              situation.situation_type,
+              situation.situation_description,
+              situation.severity,
+              startedAt,
+              entry.id
+            );
+          }
+          console.log(`✓ Created ${extractedPerson.situations.length} situations for ${person.name}`);
+        }
+      }
+    } catch (extractionError) {
+      console.error('Failed to extract people from manual entry:', extractionError);
+      // Don't fail the whole request if extraction fails
+    }
 
     // Generate friendly confirmation
     if (entryType === 'image') {
