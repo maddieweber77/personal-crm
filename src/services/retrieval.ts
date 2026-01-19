@@ -5,6 +5,8 @@ import {
   getVoiceEntriesByDate,
   getRecentVoiceEntries,
   searchManualEntriesByName,
+  getPersonEvents,
+  getPersonSituations,
 } from '../database/client';
 
 /**
@@ -40,50 +42,79 @@ export async function handleQuery(userQuery: string): Promise<string> {
 
 /**
  * Handle queries about a specific person
- * Searches both voice entries (people table) AND manual entries (screenshots/texts)
+ * Returns ALL information: person details, events, situations, updates, and manual entries
  */
 async function handlePersonQuery(personName: string): Promise<string> {
-  // Search both sources in parallel
-  const [voiceResult, manualEntries] = await Promise.all([
-    getPersonUpdates(personName),
-    searchManualEntriesByName(personName),
-  ]);
+  // First, get the person record
+  const voiceResult = await getPersonUpdates(personName);
 
-  // Check if we found anything at all
-  if (!voiceResult && manualEntries.length === 0) {
+  if (!voiceResult) {
     return `I don't have any information about ${personName} yet.`;
   }
 
+  const { person, updates } = voiceResult;
+
+  // Get all related data in parallel
+  const [events, situations, manualEntries] = await Promise.all([
+    getPersonEvents(person.id),
+    getPersonSituations(person.id),
+    searchManualEntriesByName(personName),
+  ]);
+
   let response = '';
 
-  // Add voice-based updates if they exist
-  if (voiceResult && voiceResult.updates.length > 0) {
-    const { person, updates } = voiceResult;
-
-    const updatesList = updates
-      .slice(0, 5) // Show max 5 most recent
-      .map((u) => `• ${u.update_text}`)
-      .join('\n');
-
-    const totalCount = updates.length;
-    const moreText = totalCount > 5 ? ` (+${totalCount - 5} more)` : '';
-
-    response += `${person.name} (${person.relationship}):\n\n`;
-    response += `Voice entries${moreText}:\n${updatesList}`;
+  // === SECTION 1: Person Overview ===
+  response += `${person.name} (${person.relationship})\n`;
+  response += `Priority: ${person.priority_level}\n`;
+  if (person.last_contact_date) {
+    response += `Last contact: ${person.last_contact_date.toISOString().split('T')[0]}\n`;
+  } else {
+    response += `Last contact: Never recorded\n`;
   }
 
-  // Add manual entries (screenshots/texts) if they exist
-  if (manualEntries.length > 0) {
-    if (response) {
-      response += '\n\n---\n\n';
+  // === SECTION 2: Upcoming Events ===
+  if (events.length > 0) {
+    response += '\n---\n\n📅 UPCOMING EVENTS:\n\n';
+    for (const event of events) {
+      const dateStr = event.event_date
+        ? event.event_date.toISOString().split('T')[0]
+        : event.event_date_approximate || 'Date TBD';
+      response += `• ${event.event_description} (${dateStr})\n`;
+      response += `  Type: ${event.event_type}${event.is_recurring ? ' (recurring)' : ''}\n\n`;
     }
+  }
 
-    response += `Screenshots & texts (${manualEntries.length}):\n\n`;
+  // === SECTION 3: Active Situations ===
+  const activeSituations = situations.filter(s => s.status === 'active');
+  if (activeSituations.length > 0) {
+    response += '\n---\n\n💙 ACTIVE SITUATIONS:\n\n';
+    for (const situation of activeSituations) {
+      const daysSince = Math.floor(
+        (Date.now() - new Date(situation.started_at).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      response += `• ${situation.situation_description}\n`;
+      response += `  Type: ${situation.situation_type} | Severity: ${situation.severity}\n`;
+      response += `  Duration: ${daysSince} days\n\n`;
+    }
+  }
 
-    // Show all manual entries with full content
+  // === SECTION 4: Recent Updates ===
+  if (updates.length > 0) {
+    response += '\n---\n\n📝 RECENT UPDATES:\n\n';
+    const recentUpdates = updates.slice(0, 5);
+    for (const update of recentUpdates) {
+      response += `• ${update.update_text}\n`;
+    }
+    if (updates.length > 5) {
+      response += `\n(+${updates.length - 5} more updates)\n`;
+    }
+  }
+
+  // === SECTION 5: Screenshots & Texts ===
+  if (manualEntries.length > 0) {
+    response += '\n---\n\n📸 SCREENSHOTS & TEXTS:\n\n';
     for (const entry of manualEntries) {
       const date = entry.created_at.toISOString().split('T')[0];
-
       response += `[${date}]\n${entry.extracted_content}\n\n`;
     }
   }

@@ -405,6 +405,34 @@ export async function updateSituationReminderSent(situationId: string): Promise<
 }
 
 /**
+ * Get all events for a specific person
+ */
+export async function getPersonEvents(personId: string): Promise<FriendEvent[]> {
+  const result = await getPool().query<FriendEvent>(
+    `SELECT * FROM friend_events
+     WHERE person_id = $1
+     ORDER BY event_date ASC NULLS LAST, created_at DESC`,
+    [personId]
+  );
+
+  return result.rows;
+}
+
+/**
+ * Get all situations for a specific person
+ */
+export async function getPersonSituations(personId: string): Promise<FriendSituation[]> {
+  const result = await getPool().query<FriendSituation>(
+    `SELECT * FROM friend_situations
+     WHERE person_id = $1
+     ORDER BY status ASC, started_at DESC`,
+    [personId]
+  );
+
+  return result.rows;
+}
+
+/**
  * Close the database pool (call this when shutting down the server)
  */
 export async function closePool(): Promise<void> {
