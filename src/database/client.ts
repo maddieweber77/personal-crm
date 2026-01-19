@@ -222,6 +222,22 @@ export async function getRecentManualEntries(days: number = 7): Promise<ManualEn
 }
 
 /**
+ * Search manual entries for mentions of a person name
+ * Returns entries where the extracted_content mentions the name
+ */
+export async function searchManualEntriesByName(name: string): Promise<ManualEntry[]> {
+  const result = await getPool().query<ManualEntry>(
+    `SELECT * FROM manual_entries
+     WHERE LOWER(extracted_content) LIKE LOWER($1)
+        OR LOWER(message_text) LIKE LOWER($1)
+     ORDER BY created_at DESC`,
+    [`%${name}%`]
+  );
+
+  return result.rows;
+}
+
+/**
  * Close the database pool (call this when shutting down the server)
  */
 export async function closePool(): Promise<void> {

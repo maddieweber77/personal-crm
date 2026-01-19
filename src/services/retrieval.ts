@@ -4,6 +4,7 @@ import {
   getDailySummary,
   getVoiceEntriesByDate,
   getRecentVoiceEntries,
+  searchManualEntriesByName,
 } from '../database/client';
 
 /**
@@ -39,30 +40,63 @@ export async function handleQuery(userQuery: string): Promise<string> {
 
 /**
  * Handle queries about a specific person
+ * Searches both voice entries (people table) AND manual entries (screenshots/texts)
  */
 async function handlePersonQuery(personName: string): Promise<string> {
-  const result = await getPersonUpdates(personName);
+  // Search both sources in parallel
+  const [voiceResult, manualEntries] = await Promise.all([
+    getPersonUpdates(personName),
+    searchManualEntriesByName(personName),
+  ]);
 
-  if (!result) {
+  // Check if we found anything at all
+  if (!voiceResult && manualEntries.length === 0) {
     return `I don't have any information about ${personName} yet.`;
   }
 
-  const { person, updates } = result;
+  let response = '';
 
-  if (updates.length === 0) {
-    return `${person.name}: No updates recorded yet.`;
+  // Add voice-based updates if they exist
+  if (voiceResult && voiceResult.updates.length > 0) {
+    const { person, updates } = voiceResult;
+
+    const updatesList = updates
+      .slice(0, 5) // Show max 5 most recent
+      .map((u) => `• ${u.update_text}`)
+      .join('\n');
+
+    const totalCount = updates.length;
+    const moreText = totalCount > 5 ? ` (+${totalCount - 5} more)` : '';
+
+    response += `${person.name} (${person.relationship}):\n\n`;
+    response += `Voice entries${moreText}:\n${updatesList}`;
   }
 
-  // Format the response
-  const updatesList = updates
-    .slice(0, 5) // Show max 5 most recent
-    .map((u) => `• ${u.update_text}`)
-    .join('\n');
+  // Add manual entries (screenshots/texts) if they exist
+  if (manualEntries.length > 0) {
+    if (response) {
+      response += '\n\n---\n\n';
+    }
 
-  const totalCount = updates.length;
-  const moreText = totalCount > 5 ? `\n\n(${totalCount - 5} more updates)` : '';
+    response += `Screenshots & texts (${manualEntries.length}):\n\n`;
 
-  return `${person.name} (${person.relationship}):\n\n${updatesList}${moreText}`;
+    // Show most recent 3 manual entries
+    const recentEntries = manualEntries.slice(0, 3);
+
+    for (const entry of recentEntries) {
+      const date = entry.created_at.toISOString().split('T')[0];
+      const preview = entry.extracted_content.substring(0, 200);
+      const truncated = entry.extracted_content.length > 200 ? '...' : '';
+
+      response += `[${date}] ${preview}${truncated}\n\n`;
+    }
+
+    if (manualEntries.length > 3) {
+      response += `(+${manualEntries.length - 3} more entries)`;
+    }
+  }
+
+  return response;
 }
 
 /**
