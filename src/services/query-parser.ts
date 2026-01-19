@@ -18,12 +18,16 @@ export async function parseQuery(userQuery: string): Promise<ParsedQuery> {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Get current date for context
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
-    const yesterday = new Date(today);
+    // Get current date in Eastern Time (where user is located)
+    const now = new Date();
+    const easternTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const todayStr = easternTime.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const yesterday = new Date(easternTime);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    console.log(`Date context: Today = ${todayStr}, Yesterday = ${yesterdayStr}`);
 
     const prompt = `Parse this user query and determine what information they want to retrieve.
 
