@@ -80,19 +80,11 @@ async function handlePersonQuery(personName: string): Promise<string> {
 
     response += `Screenshots & texts (${manualEntries.length}):\n\n`;
 
-    // Show most recent 3 manual entries
-    const recentEntries = manualEntries.slice(0, 3);
-
-    for (const entry of recentEntries) {
+    // Show all manual entries with full content
+    for (const entry of manualEntries) {
       const date = entry.created_at.toISOString().split('T')[0];
-      const preview = entry.extracted_content.substring(0, 200);
-      const truncated = entry.extracted_content.length > 200 ? '...' : '';
 
-      response += `[${date}] ${preview}${truncated}\n\n`;
-    }
-
-    if (manualEntries.length > 3) {
-      response += `(+${manualEntries.length - 3} more entries)`;
+      response += `[${date}]\n${entry.extracted_content}\n\n`;
     }
   }
 
