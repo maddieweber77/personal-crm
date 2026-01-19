@@ -38,11 +38,10 @@ async function checkEventReminders(): Promise<void> {
     if (!event.event_date) continue;
 
     const daysUntil = getDaysUntil(event.event_date);
-    const person = { name: event.name, relationship: event.relationship };
 
     // 1 week before reminder
     if (daysUntil === 7 && !event.reminder_sent_1week) {
-      const message = formatEventReminder(person, event, '1 week');
+      const message = formatEventReminder(event, '1 week');
       await sendEmailReminder('Event Reminder (1 Week)', message);
       await logReminder('event', event.person_id, event.id, null, message);
       await markEventReminderSent(event.id, '1week');
@@ -51,7 +50,7 @@ async function checkEventReminders(): Promise<void> {
 
     // 1 day before reminder
     if (daysUntil === 1 && !event.reminder_sent_1day) {
-      const message = formatEventReminder(person, event, '1 day');
+      const message = formatEventReminder(event, '1 day');
       await sendEmailReminder('Event Reminder (Tomorrow!)', message);
       await logReminder('event', event.person_id, event.id, null, message);
       await markEventReminderSent(event.id, '1day');
@@ -60,7 +59,7 @@ async function checkEventReminders(): Promise<void> {
 
     // Day of reminder
     if (daysUntil === 0 && !event.reminder_sent_dayof) {
-      const message = formatEventReminder(person, event, 'today');
+      const message = formatEventReminder(event, 'today');
       await sendEmailReminder('Event Reminder (TODAY!)', message);
       await logReminder('event', event.person_id, event.id, null, message);
       await markEventReminderSent(event.id, 'dayof');
@@ -76,7 +75,6 @@ async function checkSituationReminders(): Promise<void> {
   const situations = await getActiveSituations();
 
   for (const situation of situations) {
-    const person = { name: situation.name, relationship: situation.relationship };
     const daysSinceLastReminder = situation.last_reminder_sent
       ? getDaysSince(situation.last_reminder_sent)
       : 999; // Large number if never sent
@@ -101,11 +99,11 @@ async function checkSituationReminders(): Promise<void> {
 
     // Send reminder if enough time has passed
     if (daysSinceLastReminder >= reminderInterval) {
-      const message = formatSituationReminder(person, situation);
+      const message = formatSituationReminder(situation);
       await sendEmailReminder('Friend Support Reminder', message);
       await logReminder('situation', situation.person_id, null, situation.id, message);
       await updateSituationReminderSent(situation.id);
-      console.log(`✓ Sent situation reminder for: ${person.name} - ${situation.situation_description}`);
+      console.log(`✓ Sent situation reminder for: ${situation.name} - ${situation.situation_description}`);
     }
   }
 }
@@ -153,7 +151,6 @@ async function checkLastContactReminders(): Promise<void> {
  * Format event reminder message
  */
 function formatEventReminder(
-  person: { name: string; relationship: string },
   event: any,
   timing: string
 ): string {
@@ -161,7 +158,7 @@ function formatEventReminder(
 
   return `🎉 Reminder: ${event.event_description}
 
-Who: ${person.name} (${person.relationship})
+Who: ${event.name} (${event.relationship})
 When: ${dateStr} (${timing})
 Type: ${event.event_type}
 
@@ -171,10 +168,7 @@ Consider reaching out to show your support!`;
 /**
  * Format situation reminder message
  */
-function formatSituationReminder(
-  person: { name: string; relationship: string },
-  situation: any
-): string {
+function formatSituationReminder(situation: any): string {
   const daysSinceStart = getDaysSince(situation.started_at);
 
   let supportTip = '';
@@ -200,7 +194,7 @@ function formatSituationReminder(
       break;
   }
 
-  return `💙 ${person.name} needs your support
+  return `💙 ${situation.name} needs your support
 
 Situation: ${situation.situation_description}
 Severity: ${situation.severity}

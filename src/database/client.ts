@@ -301,7 +301,7 @@ export async function createFriendSituation(
 /**
  * Get upcoming events (within next N days)
  */
-export async function getUpcomingEvents(days: number = 30): Promise<Array<FriendEvent & { person: Person }>> {
+export async function getUpcomingEvents(days: number = 30): Promise<Array<FriendEvent & { name: string; relationship: string }>> {
   const result = await getPool().query(
     `SELECT fe.*, p.name, p.relationship
      FROM friend_events fe
@@ -318,7 +318,7 @@ export async function getUpcomingEvents(days: number = 30): Promise<Array<Friend
 /**
  * Get active situations that need follow-up
  */
-export async function getActiveSituations(): Promise<Array<FriendSituation & { person: Person }>> {
+export async function getActiveSituations(): Promise<Array<FriendSituation & { name: string; relationship: string }>> {
   const result = await getPool().query(
     `SELECT fs.*, p.name, p.relationship
      FROM friend_situations fs
