@@ -8,6 +8,7 @@ import cron from 'node-cron';
 import webhookRouter from './routes/webhook';
 import { closePool } from './database/client';
 import { sendCheckInReminder } from './services/reminder';
+import { checkAndSendFriendReminders } from './services/friend-reminders';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,18 +32,29 @@ const server = app.listen(PORT, () => {
   console.log(`📝 Twilio recording endpoint: http://localhost:${PORT}/api/twilio/recording-complete`);
 });
 
-// Schedule SMS reminders every 4 hours during awake hours
+// Schedule voice call reminders every 4 hours during awake hours
 // Runs at: 8am, 12pm, 4pm, 8pm (US Eastern Time)
 // Cron format: minute hour day month weekday
 // "0 8,12,16,20 * * *" = at minute 0 of hours 8, 12, 16, 20
 cron.schedule('0 8,12,16,20 * * *', () => {
-  console.log('⏰ Running scheduled reminder check...');
+  console.log('⏰ Running scheduled voice call reminder...');
   sendCheckInReminder();
 }, {
   timezone: "America/New_York" // Use Eastern Time
 });
 
-console.log('⏰ SMS reminders scheduled: 8am, 12pm, 4pm, 8pm ET');
+console.log('⏰ Voice call reminders scheduled: 8am, 12pm, 4pm, 8pm ET');
+
+// Schedule friend reminders daily at 9am Eastern Time
+// Checks for: upcoming events, active situations, people needing contact
+cron.schedule('0 9 * * *', () => {
+  console.log('⏰ Running daily friend reminders check...');
+  checkAndSendFriendReminders();
+}, {
+  timezone: "America/New_York"
+});
+
+console.log('⏰ Friend reminders scheduled: 9am ET daily');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {

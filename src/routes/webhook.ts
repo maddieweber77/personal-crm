@@ -14,6 +14,9 @@ import {
   createPersonUpdate,
   getDailySummary,
   upsertDailySummary,
+  updateLastContactDate,
+  createFriendEvent,
+  createFriendSituation,
 } from '../database/client';
 
 const router = Router();
@@ -135,6 +138,12 @@ router.post('/twilio/recording-complete', async (req: Request, res: Response) =>
         console.log(`✓ Found existing person: ${person.name}`);
       }
 
+      // Update last contact date if contact was mentioned
+      if (personExtractionResult.mentioned_contact) {
+        await updateLastContactDate(person.id, new Date(timestamp));
+        console.log(`✓ Updated last contact date for ${person.name}`);
+      }
+
       // Create person_updates for each update
       for (const update of extractedPerson.updates) {
         await createPersonUpdate(
@@ -145,6 +154,42 @@ router.post('/twilio/recording-complete', async (req: Request, res: Response) =>
         );
       }
       console.log(`✓ Created ${extractedPerson.updates.length} updates for ${person.name}`);
+
+      // Create friend events
+      if (extractedPerson.events && extractedPerson.events.length > 0) {
+        for (const event of extractedPerson.events) {
+          const eventDate = event.event_date ? new Date(event.event_date) : null;
+          const isRecurring = event.event_type === 'birthday';
+
+          await createFriendEvent(
+            person.id,
+            event.event_type,
+            event.event_description,
+            eventDate,
+            event.event_date_approximate,
+            isRecurring,
+            voiceEntry.id
+          );
+        }
+        console.log(`✓ Created ${extractedPerson.events.length} events for ${person.name}`);
+      }
+
+      // Create friend situations
+      if (extractedPerson.situations && extractedPerson.situations.length > 0) {
+        for (const situation of extractedPerson.situations) {
+          const startedAt = new Date(situation.started_at);
+
+          await createFriendSituation(
+            person.id,
+            situation.situation_type,
+            situation.situation_description,
+            situation.severity,
+            startedAt,
+            voiceEntry.id
+          );
+        }
+        console.log(`✓ Created ${extractedPerson.situations.length} situations for ${person.name}`);
+      }
     }
 
     // === STEP 6: Run LLM Pass B - Generate daily summary ===

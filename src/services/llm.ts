@@ -30,14 +30,34 @@ For each person mentioned, extract:
 - Any nicknames or aliases used to refer to them
 - Their relationship to the speaker (friend, family, coworker, or unknown if unclear)
 - Any updates or information shared about them
+- Any upcoming EVENTS mentioned (birthdays, weddings, trips, interviews, surgeries, etc.)
+- Any ongoing SITUATIONS they're dealing with (breakup, sick family, wedding planning, new job, tough time, etc.)
 
-IMPORTANT RULES:
-1. If you're unsure about someone's identity, still include them
-2. Do NOT try to deduplicate or merge people - include each mention separately
-3. Capture the context around each update
+IMPORTANT RULES FOR EVENTS:
+1. Extract specific dates when mentioned (e.g., "March 15", "next Tuesday")
+2. If only approximate timing (e.g., "next month", "in a few weeks"), put that in event_date_approximate
+3. Event types: birthday, wedding, trip, interview, surgery, other
+4. Only extract FUTURE events or events that need follow-up
+
+IMPORTANT RULES FOR SITUATIONS:
+1. Situations are ongoing challenges/life events requiring support
+2. Severity levels:
+   - high: Major life events (death, serious illness, breakup, job loss)
+   - medium: Challenging but manageable (wedding planning, new job adjustment, family stress)
+   - low: Minor ongoing things (busy season, minor health issue)
+3. Situation types: breakup, sick_family, wedding_planning, new_job, tough_time, other
+4. started_at should be the approximate date mentioned or today's date
+
+IMPORTANT RULE FOR CONTACT TRACKING:
+Set "mentioned_contact" to TRUE if the speaker explicitly mentions:
+- Talking to, texting, calling, or seeing someone
+- Having a conversation, meeting, or interaction with someone
+- Examples: "I talked to Sarah today", "I saw Mike yesterday", "I texted Grace"
+Set to FALSE if they only mention someone in passing without interaction.
 
 Return ONLY valid JSON in this exact format:
 {
+  "mentioned_contact": boolean,
   "people": [
     {
       "name": "string",
@@ -48,12 +68,28 @@ Return ONLY valid JSON in this exact format:
           "update_text": "string",
           "context": "string"
         }
+      ],
+      "events": [
+        {
+          "event_type": "birthday" | "wedding" | "trip" | "interview" | "surgery" | "other",
+          "event_description": "string",
+          "event_date": "YYYY-MM-DD" | null,
+          "event_date_approximate": "string" | null
+        }
+      ],
+      "situations": [
+        {
+          "situation_type": "breakup" | "sick_family" | "wedding_planning" | "new_job" | "tough_time" | "other",
+          "situation_description": "string",
+          "severity": "high" | "medium" | "low",
+          "started_at": "YYYY-MM-DD"
+        }
       ]
     }
   ]
 }
 
-If no people are mentioned, return: {"people": []}
+If no people are mentioned, return: {"mentioned_contact": false, "people": []}
 
 Transcript:
 ${transcript}`;
