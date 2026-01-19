@@ -5,6 +5,8 @@ import { downloadRecording } from '../services/audio-downloader';
 import { transcribeAudio } from '../services/transcription';
 import { extractPeopleFromTranscript, generateDailySummary } from '../services/llm';
 import { handleQuery } from '../services/retrieval';
+import { determineIntent } from '../services/intent-classifier';
+import { handleStoreRequest } from '../services/store-handler';
 import {
   createVoiceEntry,
   findPersonByNameOrAlias,
@@ -175,11 +177,25 @@ router.post('/twilio/recording-complete', async (req: Request, res: Response) =>
 router.post('/twilio/sms', async (req: Request, res: Response) => {
   try {
     const from = req.body.From;
-    const body = req.body.Body;
+    const body = req.body.Body || '';
+    const numMedia = parseInt(req.body.NumMedia || '0');
+    const mediaUrls: string[] = [];
+
+    // Collect all media URLs if present
+    for (let i = 0; i < numMedia; i++) {
+      const mediaUrl = req.body[`MediaUrl${i}`];
+      if (mediaUrl) {
+        mediaUrls.push(mediaUrl);
+      }
+    }
 
     console.log('\n=== Incoming SMS ===');
     console.log(`From: ${from}`);
     console.log(`Message: ${body}`);
+    console.log(`Media count: ${numMedia}`);
+    if (mediaUrls.length > 0) {
+      console.log(`Media URLs:`, mediaUrls);
+    }
 
     // Security: Only allow messages from Maddie's number
     const ALLOWED_NUMBER = '+17049997750';
@@ -189,8 +205,20 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
       return;
     }
 
-    // Process the query
-    const responseText = await handleQuery(body);
+    // Determine intent: storing info or retrieving info
+    const intent = await determineIntent(body, mediaUrls.length > 0);
+    console.log(`Intent detected: ${intent}`);
+
+    let responseText: string;
+
+    if (intent === 'store') {
+      // User is sending information to store
+      responseText = await handleStoreRequest(body, mediaUrls);
+    } else {
+      // User is querying for information
+      responseText = await handleQuery(body);
+    }
+
     console.log(`Response: ${responseText}`);
 
     // Respond to Twilio immediately

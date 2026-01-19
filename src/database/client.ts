@@ -4,6 +4,7 @@ import type {
   VoiceEntry,
   PersonUpdate,
   DailySummary,
+  ManualEntry,
 } from '../types';
 
 // Lazy initialization: create pool on first use to ensure env vars are loaded
@@ -182,6 +183,39 @@ export async function getRecentVoiceEntries(days: number = 7): Promise<VoiceEntr
     `SELECT * FROM voice_entries
      WHERE recorded_at >= NOW() - INTERVAL '${days} days'
      ORDER BY recorded_at DESC`
+  );
+
+  return result.rows;
+}
+
+/**
+ * Create a manual entry (screenshot or text message)
+ */
+export async function createManualEntry(
+  entryType: 'text' | 'image',
+  messageText: string | null,
+  imageUrl: string | null,
+  imageAnalysis: string | null,
+  extractedContent: string
+): Promise<ManualEntry> {
+  const result = await getPool().query<ManualEntry>(
+    `INSERT INTO manual_entries (entry_type, message_text, image_url, image_analysis, extracted_content)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [entryType, messageText, imageUrl, imageAnalysis, extractedContent]
+  );
+
+  return result.rows[0];
+}
+
+/**
+ * Get recent manual entries
+ */
+export async function getRecentManualEntries(days: number = 7): Promise<ManualEntry[]> {
+  const result = await getPool().query<ManualEntry>(
+    `SELECT * FROM manual_entries
+     WHERE created_at >= NOW() - INTERVAL '${days} days'
+     ORDER BY created_at DESC`
   );
 
   return result.rows;

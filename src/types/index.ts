@@ -31,6 +31,16 @@ export interface DailySummary {
   created_at: Date;
 }
 
+export interface ManualEntry {
+  id: string;
+  created_at: Date;
+  entry_type: 'text' | 'image';
+  message_text: string | null;
+  image_url: string | null;
+  image_analysis: string | null;
+  extracted_content: string;
+}
+
 // LLM extraction types
 export interface ExtractedPerson {
   name: string;
