@@ -3,6 +3,7 @@ import { createWriteStream, mkdir } from 'fs';
 import { join, dirname } from 'path';
 import { pipeline } from 'stream/promises';
 import { promisify } from 'util';
+import { isTwilioApiUrl } from '../middleware/twilio-auth';
 
 const mkdirAsync = promisify(mkdir);
 
@@ -17,10 +18,16 @@ export async function downloadRecording(
   recordingUrl: string,
   callSid: string
 ): Promise<string> {
+  // Our Twilio credentials only ever go to Twilio's own API host.
+  if (!isTwilioApiUrl(recordingUrl)) {
+    throw new Error('Recording URL is not a Twilio API URL');
+  }
+
   // Construct the local file path
   // Format: audio-files/CALL_SID_TIMESTAMP.wav
   const timestamp = Date.now();
-  const filename = `${callSid}_${timestamp}.wav`;
+  const safeCallSid = callSid.replace(/[^A-Za-z0-9]/g, '');
+  const filename = `${safeCallSid}_${timestamp}.wav`;
   const localPath = join(process.cwd(), 'audio-files', filename);
 
   try {
@@ -49,7 +56,8 @@ export async function downloadRecording(
     console.log(`✓ Recording saved to: ${localPath}`);
     return localPath;
   } catch (error) {
-    console.error('Failed to download recording:', error);
+    // Message only: the full axios error includes the request's auth config.
+    console.error('Failed to download recording:', error instanceof Error ? error.message : String(error));
     throw new Error(`Failed to download recording from ${recordingUrl}`);
   }
 }

@@ -34,6 +34,7 @@ export async function sendCheckInReminder(): Promise<void> {
 
     console.log(`✓ Reminder call initiated: ${call.sid}`);
   } catch (error) {
-    console.error('Failed to make reminder call:', error);
+    // Message only: Twilio client errors can carry the request's auth header.
+    console.error('Failed to make reminder call:', error instanceof Error ? error.message : String(error));
   }
 }

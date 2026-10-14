@@ -7,6 +7,7 @@ import { extractPeopleFromTranscript, generateDailySummary } from '../services/l
 import { handleQuery } from '../services/retrieval';
 import { determineIntent } from '../services/intent-classifier';
 import { handleStoreRequest } from '../services/store-handler';
+import { requireTwilioSignature } from '../middleware/twilio-auth';
 import {
   createVoiceEntry,
   findPersonByNameOrAlias,
@@ -20,6 +21,10 @@ import {
 } from '../database/client';
 
 const router = Router();
+
+// Every /twilio/* route must come from Twilio itself (signed request).
+// The From-number checks below only work once the request is known to be real.
+router.use('/twilio', requireTwilioSignature);
 
 /**
  * Twilio voice webhook - called when someone calls your Twilio number
@@ -285,7 +290,8 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
       console.log('✓ Response sent via SMS');
     } catch (smsError) {
       console.log('⚠️ SMS send failed');
-      console.error('SMS Error:', smsError);
+      // Message only: Twilio client errors can carry the request's auth header.
+      console.error('SMS Error:', smsError instanceof Error ? smsError.message : String(smsError));
     }
 
     // ALWAYS send via email as well (for permanent record)
@@ -334,7 +340,6 @@ async function sendEmailFallback(query: string, response: string): Promise<void>
     console.error('Error message:', error.message);
     console.error('Error code:', error.code);
     console.error('Error response:', JSON.stringify(error.response?.body, null, 2));
-    console.error('Full error:', error);
   }
 }
 
