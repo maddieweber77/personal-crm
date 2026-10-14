@@ -25,9 +25,14 @@ export function requireTwilioSignature(req: Request, res: Response, next: NextFu
     res.status(403).send('Forbidden');
     return;
   }
-  const valid = twilio.validateRequest(authToken, signature, publicUrl(req), req.body || {});
+  let valid = false;
+  try {
+    valid = twilio.validateRequest(authToken, signature, publicUrl(req), req.body || {});
+  } catch {
+    valid = false; // e.g. a malformed Host header: reject, don't 500
+  }
   if (!valid) {
-    console.log(`⛔ Rejected request with invalid Twilio signature: ${req.method} ${req.path}`);
+    console.log(`⛔ Rejected request with invalid Twilio signature: ${req.method} ${req.originalUrl}`);
     res.status(403).send('Forbidden');
     return;
   }

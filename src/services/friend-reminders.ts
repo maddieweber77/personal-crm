@@ -252,7 +252,8 @@ async function sendEmailReminder(subject: string, message: string): Promise<void
       text: message,
     });
   } catch (error) {
-    console.error('Failed to send email reminder:', error);
+    // Message only: SendGrid errors can carry the request's auth header.
+    console.error('Failed to send email reminder:', error instanceof Error ? error.message : String(error));
   }
 }
 
