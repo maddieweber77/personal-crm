@@ -179,13 +179,24 @@ export async function getVoiceEntriesByDate(date: string): Promise<VoiceEntry[]>
 }
 
 /**
+ * Day counts can come from LLM output, so never trust them as SQL text:
+ * coerce to a whole number in 0..3650 (fallback if it isn't a number).
+ */
+export function toDayCount(value: unknown, fallback: number): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, 0), 3650);
+}
+
+/**
  * Get recent voice entries (last N days)
  */
 export async function getRecentVoiceEntries(days: number = 7): Promise<VoiceEntry[]> {
   const result = await getPool().query<VoiceEntry>(
     `SELECT * FROM voice_entries
-     WHERE recorded_at >= NOW() - INTERVAL '${days} days'
-     ORDER BY recorded_at DESC`
+     WHERE recorded_at >= NOW() - make_interval(days => $1)
+     ORDER BY recorded_at DESC`,
+    [toDayCount(days, 7)]
   );
 
   return result.rows;
@@ -217,8 +228,9 @@ export async function createManualEntry(
 export async function getRecentManualEntries(days: number = 7): Promise<ManualEntry[]> {
   const result = await getPool().query<ManualEntry>(
     `SELECT * FROM manual_entries
-     WHERE created_at >= NOW() - INTERVAL '${days} days'
-     ORDER BY created_at DESC`
+     WHERE created_at >= NOW() - make_interval(days => $1)
+     ORDER BY created_at DESC`,
+    [toDayCount(days, 7)]
   );
 
   return result.rows;
@@ -308,8 +320,9 @@ export async function getUpcomingEvents(days: number = 30): Promise<Array<Friend
      JOIN people p ON fe.person_id = p.id
      WHERE fe.event_date IS NOT NULL
        AND fe.event_date >= CURRENT_DATE
-       AND fe.event_date <= CURRENT_DATE + INTERVAL '${days} days'
-     ORDER BY fe.event_date ASC`
+       AND fe.event_date <= CURRENT_DATE + make_interval(days => $1)
+     ORDER BY fe.event_date ASC`,
+    [toDayCount(days, 30)]
   );
 
   return result.rows;
@@ -343,11 +356,12 @@ export async function getPeopleNeedingContact(
     `SELECT *
      FROM people
      WHERE (
-       (priority_level = 'high' AND (last_contact_date IS NULL OR last_contact_date < CURRENT_DATE - INTERVAL '${priorityDays} days'))
+       (priority_level = 'high' AND (last_contact_date IS NULL OR last_contact_date < CURRENT_DATE - make_interval(days => $1)))
        OR
-       (priority_level = 'normal' AND (last_contact_date IS NULL OR last_contact_date < CURRENT_DATE - INTERVAL '${normalDays} days'))
+       (priority_level = 'normal' AND (last_contact_date IS NULL OR last_contact_date < CURRENT_DATE - make_interval(days => $2)))
      )
-     ORDER BY priority_level DESC, last_contact_date ASC NULLS FIRST`
+     ORDER BY priority_level DESC, last_contact_date ASC NULLS FIRST`,
+    [toDayCount(priorityDays, 14), toDayCount(normalDays, 28)]
   );
 
   return result.rows;

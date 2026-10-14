@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import axios from 'axios';
+import { isTwilioApiUrl } from '../middleware/twilio-auth';
 
 /**
  * Analyzes an image using OpenAI Vision API
@@ -12,6 +13,11 @@ export async function analyzeImage(imageUrl: string, userContext?: string): Prom
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
+
+    // Our Twilio credentials only ever go to Twilio's own API host.
+    if (!isTwilioApiUrl(imageUrl)) {
+      throw new Error('Image URL is not a Twilio API URL');
+    }
 
     // Download the image with Twilio authentication
     const imageResponse = await axios({
@@ -60,7 +66,8 @@ export async function analyzeImage(imageUrl: string, userContext?: string): Prom
 
     return analysis;
   } catch (error) {
-    console.error('Image analysis failed:', error);
+    // Message only: the full axios error includes the request's auth config.
+    console.error('Image analysis failed:', error instanceof Error ? error.message : String(error));
     throw new Error('Failed to analyze image');
   }
 }

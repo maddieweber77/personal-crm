@@ -7,6 +7,7 @@ import { extractPeopleFromTranscript, generateDailySummary } from '../services/l
 import { handleQuery } from '../services/retrieval';
 import { determineIntent } from '../services/intent-classifier';
 import { handleStoreRequest } from '../services/store-handler';
+import { requireTwilioSignature } from '../middleware/twilio-auth';
 import {
   createVoiceEntry,
   findPersonByNameOrAlias,
@@ -20,6 +21,10 @@ import {
 } from '../database/client';
 
 const router = Router();
+
+// Every /twilio/* route must come from Twilio itself (signed request).
+// The From-number checks below only work once the request is known to be real.
+router.use('/twilio', requireTwilioSignature);
 
 /**
  * Twilio voice webhook - called when someone calls your Twilio number
