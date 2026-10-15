@@ -638,6 +638,65 @@ export async function releaseDigestClaim(digestDate: string, digestType: string)
 }
 
 /**
+ * Everyone with a birthday: from Contacts (people.birthday), or else a
+ * birthday mentioned on a call/text. Dates as 'YYYY-MM-DD' text.
+ */
+export async function getBirthdays(): Promise<Array<{ name: string; birthday: string }>> {
+  const result = await getPool().query(
+    `SELECT p.name, to_char(p.birthday, 'YYYY-MM-DD') AS birthday
+     FROM people p
+     WHERE p.merged_into_id IS NULL AND p.birthday IS NOT NULL
+     UNION ALL
+     SELECT DISTINCT ON (p.id) p.name, to_char(fe.event_date, 'YYYY-MM-DD')
+     FROM friend_events fe JOIN people p ON p.id = fe.person_id
+     WHERE fe.event_type = 'birthday' AND fe.event_date IS NOT NULL
+       AND p.merged_into_id IS NULL AND p.birthday IS NULL`
+  );
+  return result.rows;
+}
+
+/** Non-birthday events with an exact date between two days (inclusive). */
+export async function getDatedFriendEvents(fromDate: string, toDate: string): Promise<Array<{ name: string; description: string; eventType: string; date: string }>> {
+  const result = await getPool().query(
+    `SELECT p.name, fe.event_description AS description, fe.event_type AS "eventType",
+            to_char(fe.event_date, 'YYYY-MM-DD') AS date
+     FROM friend_events fe JOIN people p ON p.id = fe.person_id
+     WHERE fe.event_type <> 'birthday' AND fe.event_date BETWEEN $1::date AND $2::date
+     ORDER BY fe.event_date`,
+    [fromDate, toDate]
+  );
+  return result.rows;
+}
+
+/** Live person who has any of these phone numbers (E.164), if one exists. */
+export async function findPersonByPhones(phones: string[]): Promise<Pick<Person, 'id' | 'name'> | null> {
+  const result = await getPool().query(
+    `SELECT id, name FROM people WHERE merged_into_id IS NULL AND phone_numbers && $1::text[] LIMIT 1`,
+    [phones]
+  );
+  return result.rows[0] || null;
+}
+
+/** Live person whose name or alias is exactly this (any capitalization). */
+export async function findPersonByExactName(name: string): Promise<Pick<Person, 'id' | 'name'> | null> {
+  const result = await getPool().query(
+    `SELECT id, name FROM people
+     WHERE merged_into_id IS NULL AND (LOWER(name) = LOWER($1) OR LOWER($1) = ANY(SELECT LOWER(unnest(aliases))))
+     LIMIT 1`,
+    [name]
+  );
+  return result.rows[0] || null;
+}
+
+/** Add someone from Contacts (name, numbers, birthday). */
+export async function createPersonFromContact(name: string, phones: string[], birthday: string | null): Promise<void> {
+  await getPool().query(
+    `INSERT INTO people (name, aliases, relationship, phone_numbers, birthday) VALUES ($1, '{}', 'unknown', $2, $3::date)`,
+    [name, phones, birthday]
+  );
+}
+
+/**
  * Close the database pool (call this when shutting down the server)
  */
 export async function closePool(): Promise<void> {

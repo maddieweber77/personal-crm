@@ -1,4 +1,5 @@
 import { CalendarEvent, dateKeyInTimeZone, dayWindow } from './calendar';
+import type { FriendReminder } from './friend-reminders-digest';
 
 /**
  * Builds the text of the morning digest (no sending, no network, no DB),
@@ -23,10 +24,17 @@ export type CalendarStatus =
   | { status: 'failed' } // the calendar couldn't be downloaded or read
   | { status: 'not_configured' }; // PERSONAL_CALENDAR_ICS_URL isn't set
 
+/** Birthday / important-date reminders, or why we don't have them. */
+export type FriendsStatus =
+  | { status: 'ok'; reminders: FriendReminder[] }
+  | { status: 'failed' } // the database couldn't be read
+  | { status: 'skipped' }; // e.g. a preview with no database
+
 export interface MorningDigestInput {
   /** The digest's day, 'YYYY-MM-DD' in DIGEST_TIME_ZONE. */
   date: string;
   calendar: CalendarStatus;
+  friends?: FriendsStatus;
 }
 
 export interface MorningDigest {
@@ -46,11 +54,10 @@ interface DigestSection {
   subjectSummary: string;
 }
 
-export function buildMorningDigest({ date, calendar }: MorningDigestInput): MorningDigest {
-  const sections: DigestSection[] = [
-    calendarSection(calendar, date),
-    // Future sections (e.g. friends) go here.
-  ];
+export function buildMorningDigest({ date, calendar, friends = { status: 'skipped' } }: MorningDigestInput): MorningDigest {
+  // Friends first: they're short and the most likely to need action today.
+  const sections: DigestSection[] = [friendsSection(friends), calendarSection(calendar, date)]
+    .filter((section): section is DigestSection => section !== null);
 
   // Text message: header, then each section in the space that's left.
   const smsHeader = `Good morning! ${shortDate(date)}:`;
@@ -72,6 +79,27 @@ export function buildMorningDigest({ date, calendar }: MorningDigestInput): Morn
     sms: truncate(smsLines.join('\n'), SMS_MAX_CHARS),
     emailSubject: `Morning digest: ${shortDate(date)} - ${sections.map((s) => s.subjectSummary).join(', ')}`,
     emailText: emailParts.join('\n\n') + '\n',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Friends section ("text them"): left out entirely on days with nothing to say
+// ---------------------------------------------------------------------------
+
+function friendsSection(friends: FriendsStatus): DigestSection | null {
+  if (friends.status === 'skipped') return null;
+  if (friends.status === 'failed') {
+    const line = "• Couldn't load birthday/friend reminders today.";
+    return { emailHeading: 'TEXT THEM', emailLines: [line], smsLines: () => [line], subjectSummary: "reminders didn't load" };
+  }
+  if (friends.reminders.length === 0) return null;
+  const lines = friends.reminders.map(r => `• ${r.text}`);
+  return {
+    emailHeading: 'TEXT THEM',
+    emailLines: lines,
+    // At most half the text, so today's calendar still fits.
+    smsLines: (maxChars) => fitWithMoreLine(lines.map(l => truncate(l, 120)), Math.min(maxChars, SMS_MAX_CHARS / 2)),
+    subjectSummary: friends.reminders.length === 1 ? '1 friend reminder' : `${friends.reminders.length} friend reminders`,
   };
 }
 
