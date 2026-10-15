@@ -1,8 +1,9 @@
 import { readFile } from 'fs/promises';
 import { dateKeyInTimeZone, fetchCalendarIcs, getEventsForDay, redactSecret } from './calendar';
-import { buildMorningDigest, CalendarStatus, DIGEST_TIME_ZONE, MorningDigest } from './morning-digest';
+import { buildMorningDigest, CalendarStatus, DIGEST_TIME_ZONE, FriendsStatus, MorningDigest } from './morning-digest';
+import { friendReminders } from './friend-reminders-digest';
 import { sendEmail, sendSms } from './notify';
-import { claimDigest, recordDigestResult, releaseDigestClaim } from '../database/client';
+import { claimDigest, recordDigestResult, releaseDigestClaim, getBirthdays, getDatedFriendEvents } from '../database/client';
 
 /**
  * The morning digest job: load today's calendar, build the digest, send it
@@ -33,7 +34,9 @@ export async function runMorningDigest(options: RunMorningDigestOptions = {}): P
   const date = options.date ?? dateKeyInTimeZone(new Date(), DIGEST_TIME_ZONE);
 
   if (dryRun) {
-    const digest = buildMorningDigest({ date, calendar: await loadCalendar(date, icsFile) });
+    // Preview reads friends only when a database is configured (read-only).
+    const friends: FriendsStatus = process.env.DATABASE_URL ? await loadFriends(date) : { status: 'skipped' };
+    const digest = buildMorningDigest({ date, calendar: await loadCalendar(date, icsFile), friends });
     return { outcome: 'preview', date, digest };
   }
 
@@ -47,7 +50,7 @@ export async function runMorningDigest(options: RunMorningDigestOptions = {}): P
   let smsOk = false;
   let emailOk = false;
   try {
-    const digest = buildMorningDigest({ date, calendar: await loadCalendar(date, icsFile) });
+    const digest = buildMorningDigest({ date, calendar: await loadCalendar(date, icsFile), friends: await loadFriends(date) });
 
     // 2. Send both. sendSms/sendEmail never throw, so a failed text (e.g. the
     //    toll-free number isn't verified yet) never stops the email.
@@ -95,6 +98,25 @@ async function loadCalendar(date: string, icsFile?: string): Promise<CalendarSta
     // Message only, with the secret URL scrubbed out (belt and braces).
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Couldn't load the calendar: ${redactSecret(message, url)}`);
+    return { status: 'failed' };
+  }
+}
+
+/**
+ * Birthday and important-date reminders for `date`. Never throws: a database
+ * problem becomes { status: 'failed' } so the digest can say so.
+ */
+async function loadFriends(date: string): Promise<FriendsStatus> {
+  try {
+    const tomorrow = new Date(`${date}T12:00:00Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const [birthdays, events] = await Promise.all([
+      getBirthdays(),
+      getDatedFriendEvents(date, tomorrow.toISOString().slice(0, 10)),
+    ]);
+    return { status: 'ok', reminders: friendReminders(date, birthdays, events) };
+  } catch (error) {
+    console.error(`Couldn't load friend reminders: ${error instanceof Error ? error.message : String(error)}`);
     return { status: 'failed' };
   }
 }

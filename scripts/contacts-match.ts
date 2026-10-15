@@ -14,50 +14,12 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  toE164, appleDateToIso, contactFullName, matchPerson, findDuplicatePairs, type Contact,
-} from '../src/services/contacts';
+import { contactFullName, matchPerson, findDuplicatePairs } from '../src/services/contacts';
+import { readContacts } from './lib/mac-data';
 import { getPeopleForMatching, setContactInfo, mergePeople, closePool } from '../src/database/client';
-
-function addressBookFiles(): string[] {
-  const root = join(homedir(), 'Library/Application Support/AddressBook');
-  const files = [join(root, 'AddressBook-v22.abcddb')];
-  const sources = join(root, 'Sources');
-  if (existsSync(sources)) {
-    for (const dir of readdirSync(sources)) files.push(join(sources, dir, 'AddressBook-v22.abcddb'));
-  }
-  return files.filter(f => existsSync(f));
-}
-
-function readContacts(): Contact[] {
-  const contacts: Contact[] = [];
-  for (const file of addressBookFiles()) {
-    const db = new DatabaseSync(file, { readOnly: true });
-    const people = db.prepare(
-      `SELECT Z_PK AS pk, ZFIRSTNAME AS first, ZLASTNAME AS last, ZNICKNAME AS nick, ZBIRTHDAY AS bday
-       FROM ZABCDRECORD WHERE ZFIRSTNAME IS NOT NULL OR ZLASTNAME IS NOT NULL`
-    ).all() as Array<{ pk: number; first: string | null; last: string | null; nick: string | null; bday: number | null }>;
-    const phones = db.prepare(`SELECT ZOWNER AS owner, ZFULLNUMBER AS number FROM ZABCDPHONENUMBER`).all() as Array<{ owner: number; number: string | null }>;
-    const byOwner = new Map<number, string[]>();
-    for (const p of phones) {
-      const e164 = p.number ? toE164(p.number) : null;
-      if (e164) byOwner.set(p.owner, [...(byOwner.get(p.owner) || []), e164]);
-    }
-    for (const r of people) {
-      contacts.push({
-        firstName: r.first, lastName: r.last, nickname: r.nick,
-        phones: [...new Set(byOwner.get(r.pk) || [])],
-        birthday: appleDateToIso(r.bday),
-      });
-    }
-    db.close();
-  }
-  return contacts;
-}
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
