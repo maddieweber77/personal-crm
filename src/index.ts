@@ -9,6 +9,7 @@ import webhookRouter from './routes/webhook';
 import { closePool } from './database/client';
 import { sendCheckInReminder } from './services/reminder';
 import { checkAndSendFriendReminders } from './services/friend-reminders';
+import { runMorningDigest } from './services/morning-digest-job';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -55,6 +56,22 @@ const server = app.listen(PORT, () => {
 // });
 //
 // console.log('⏰ Friend reminders scheduled: 9am ET daily');
+
+// Morning digest: today's personal calendar by SMS + email, 7:30am ET daily.
+// Off unless MORNING_DIGEST_ENABLED=true, so running locally never texts you.
+if (process.env.MORNING_DIGEST_ENABLED === 'true') {
+  cron.schedule('30 7 * * *', () => {
+    console.log('⏰ Running morning digest...');
+    runMorningDigest().catch((error) => {
+      console.error('Morning digest failed:', error instanceof Error ? error.message : String(error));
+    });
+  }, {
+    timezone: 'America/New_York',
+  });
+  console.log('⏰ Morning digest scheduled: 7:30am ET daily');
+} else {
+  console.log('⏸️ Morning digest not scheduled (set MORNING_DIGEST_ENABLED=true to turn it on)');
+}
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {

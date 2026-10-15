@@ -447,6 +447,50 @@ export async function getPersonSituations(personId: string): Promise<FriendSitua
 }
 
 /**
+ * Claim a digest (e.g. the 'morning' digest for '2026-10-14') before sending it.
+ * Returns true if we got the claim, false if it was already claimed - so a
+ * restart or a second copy of the server never sends the same digest twice.
+ */
+export async function claimDigest(digestDate: string, digestType: string): Promise<boolean> {
+  const result = await getPool().query(
+    `INSERT INTO digest_log (digest_date, digest_type)
+     VALUES ($1, $2)
+     ON CONFLICT (digest_date, digest_type) DO NOTHING
+     RETURNING digest_date`,
+    [digestDate, digestType]
+  );
+
+  return result.rows.length > 0;
+}
+
+/**
+ * Record whether the SMS and email of a claimed digest went out
+ */
+export async function recordDigestResult(
+  digestDate: string,
+  digestType: string,
+  smsOk: boolean,
+  emailOk: boolean
+): Promise<void> {
+  await getPool().query(
+    `UPDATE digest_log
+     SET sms_ok = $3, email_ok = $4, sent_at = NOW()
+     WHERE digest_date = $1 AND digest_type = $2`,
+    [digestDate, digestType, smsOk, emailOk]
+  );
+}
+
+/**
+ * Give up a claim (when nothing could be sent), so a manual re-run can retry
+ */
+export async function releaseDigestClaim(digestDate: string, digestType: string): Promise<void> {
+  await getPool().query(
+    `DELETE FROM digest_log WHERE digest_date = $1 AND digest_type = $2`,
+    [digestDate, digestType]
+  );
+}
+
+/**
  * Close the database pool (call this when shutting down the server)
  */
 export async function closePool(): Promise<void> {
