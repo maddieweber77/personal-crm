@@ -6,6 +6,9 @@ export interface Person {
   relationship: 'friend' | 'family' | 'coworker' | 'unknown';
   last_contact_date: Date | null;
   priority_level: 'high' | 'normal';
+  phone_numbers: string[]; // E.164, from Contacts
+  birthday: Date | null;
+  merged_into_id: string | null; // set when this row was merged into another person
   created_at: Date;
   updated_at: Date;
 }
@@ -21,7 +24,8 @@ export interface VoiceEntry {
 export interface PersonUpdate {
   id: string;
   person_id: string;
-  voice_entry_id: string;
+  voice_entry_id: string | null; // from a phone call...
+  manual_entry_id: string | null; // ...or from a texted note
   update_text: string;
   context: string | null;
   created_at: Date;
@@ -82,32 +86,4 @@ export interface ReminderLog {
   related_situation_id: string | null;
   message_sent: string;
   sent_at: Date;
-}
-
-// LLM extraction types
-export interface ExtractedPerson {
-  name: string;
-  aliases: string[];
-  relationship: 'friend' | 'family' | 'coworker' | 'unknown';
-  updates: {
-    update_text: string;
-    context: string;
-  }[];
-  events?: {
-    event_type: 'birthday' | 'wedding' | 'trip' | 'interview' | 'surgery' | 'other';
-    event_description: string;
-    event_date: string | null; // ISO date string or null
-    event_date_approximate: string | null; // "next month", "in a few weeks"
-  }[];
-  situations?: {
-    situation_type: 'breakup' | 'sick_family' | 'wedding_planning' | 'new_job' | 'tough_time' | 'other';
-    situation_description: string;
-    severity: 'high' | 'medium' | 'low';
-    started_at: string; // ISO date string
-  }[];
-}
-
-export interface PersonExtractionResult {
-  people: ExtractedPerson[];
-  mentioned_contact: boolean; // True if user mentioned talking to/seeing someone
 }
