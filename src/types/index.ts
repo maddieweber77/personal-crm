@@ -5,6 +5,7 @@ export interface Person {
   aliases: string[];
   relationship: 'friend' | 'family' | 'coworker' | 'unknown';
   last_contact_date: Date | null;
+  last_seen_date: Date | null; // last time together in person
   priority_level: 'high' | 'normal';
   phone_numbers: string[]; // E.164, from Contacts
   birthday: Date | null;

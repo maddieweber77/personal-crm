@@ -4,6 +4,7 @@ import {
   addAliases,
   createPersonUpdate,
   updateLastContactDate,
+  updateLastSeenDate,
   createFriendEvent,
   createFriendSituation,
   createPendingMention,
@@ -13,6 +14,7 @@ import {
   extractMentions,
   resolveMention,
   newAliases,
+  normalizeName,
   parseIsoDate,
   type ExtractedMention,
   type RosterPerson,
@@ -28,6 +30,10 @@ import {
 export interface EntrySource {
   kind: 'voice' | 'manual';
   entryId: string;
+  /** For 'manual' entries that are synced text conversations (default: a texted note). */
+  isConversation?: boolean;
+  /** Names of the people in that conversation (besides Maddie). */
+  participants?: string[];
 }
 
 export interface ProcessResult {
@@ -43,6 +49,7 @@ export interface PeopleStore {
   addAliases(personId: string, aliases: string[]): Promise<void>;
   createPersonUpdate(personId: string, source: UpdateSource, text: string, context: string | null): Promise<unknown>;
   updateLastContactDate(personId: string, date: Date): Promise<void>;
+  updateLastSeenDate(personId: string, day: string): Promise<void>;
   createFriendEvent(
     personId: string, type: ExtractedMention['events'][number]['event_type'], description: string,
     date: Date | null, approximate: string | null, isRecurring: boolean, sourceEntryId: string
@@ -58,7 +65,7 @@ export interface PeopleStore {
 }
 
 const dbStore: PeopleStore = {
-  getRoster, createPerson, addAliases, createPersonUpdate, updateLastContactDate,
+  getRoster, createPerson, addAliases, createPersonUpdate, updateLastContactDate, updateLastSeenDate,
   createFriendEvent, createFriendSituation, createPendingMention,
 };
 
@@ -82,7 +89,7 @@ export async function processEntry(
   const roster = await store.getRoster();
   const extraction = await extract(
     sourceText,
-    source.kind === 'voice' ? 'voice call transcript' : 'text message or screenshot',
+    source.kind === 'voice' ? 'voice call transcript' : source.isConversation ? 'text conversation' : 'text message or screenshot',
     roster,
     dateInNewYork(occurredAt)
   );
@@ -90,6 +97,16 @@ export async function processEntry(
 
   for (const mention of extraction.people) {
     const resolution = resolveMention(mention, roster);
+
+    // Text conversations mention lots of people in passing. Only keep a new
+    // person there if we know their full name or they're in the conversation;
+    // and don't ask Maddie about nameless mentions ("ur dad", "the Darden girl").
+    if (source.isConversation) {
+      const inConversation = (source.participants ?? []).some(p => normalizeName(p) === normalizeName(mention.full_name || mention.mention));
+      const hasFullName = (mention.full_name || '').trim().includes(' ');
+      if (resolution.kind === 'new' && !inConversation && !hasFullName) continue;
+      if (resolution.kind === 'unsure' && resolution.candidateIds.length === 0) continue;
+    }
 
     if (resolution.kind === 'unsure') {
       await store.createPendingMention(mention.mention, resolution.candidateIds, mention, source, occurredAt);
@@ -135,6 +152,12 @@ export async function saveDetails(
   // Per person: only the people Maddie actually talked to or saw.
   if (mention.interacted) {
     await store.updateLastContactDate(personId, occurredAt);
+  }
+
+  // In-person time is tracked separately: texting isn't seeing someone.
+  const seen = parseIsoDate(mention.saw_in_person);
+  if (seen && seen.getTime() <= occurredAt.getTime() + 86_400_000) {
+    await store.updateLastSeenDate(personId, mention.saw_in_person!);
   }
 
   for (const update of mention.updates) {

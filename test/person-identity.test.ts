@@ -15,7 +15,7 @@ const GRACE: RosterPerson = { id: 'p-grace', name: 'Grace Smith', aliases: ['Gra
 function mention(over: Partial<ExtractedMention>): ExtractedMention {
   return {
     mention: 'Someone', match: 'new', person_id: null, candidate_ids: [], full_name: null, aliases: [],
-    relationship: 'friend', interacted: false, updates: [], events: [], situations: [], ...over,
+    relationship: 'friend', interacted: false, saw_in_person: null, updates: [], events: [], situations: [], ...over,
   };
 }
 
@@ -112,6 +112,7 @@ function fakeStore(roster: RosterPerson[]) {
     addAliases: record('addAliases') as PeopleStore['addAliases'],
     createPersonUpdate: record('createPersonUpdate'),
     updateLastContactDate: record('updateLastContactDate') as PeopleStore['updateLastContactDate'],
+    updateLastSeenDate: record('updateLastSeenDate') as PeopleStore['updateLastSeenDate'],
     createFriendEvent: record('createFriendEvent'),
     createFriendSituation: record('createFriendSituation'),
     createPendingMention: record('createPendingMention'),
@@ -192,4 +193,23 @@ test('migrations: baseline files never re-run; new ones run in order', () => {
   const files = ['006_person_identity.sql', '001_create_tables.sql', '005_digest_log.sql', 'README.md', ...BASELINE_MIGRATIONS];
   assert.deepEqual(pendingMigrations(files, new Set(BASELINE_MIGRATIONS)), ['005_digest_log.sql', '006_person_identity.sql']);
   assert.deepEqual(pendingMigrations(files, new Set([...BASELINE_MIGRATIONS, '005_digest_log.sql', '006_person_identity.sql'])), []);
+});
+
+test('possessive descriptions are not names', () => {
+  assert.equal(looksLikeName("Davis's little brother"), false);
+  assert.equal(looksLikeName("Fleming’s mom"), false);
+  assert.equal(looksLikeName("O'Neil"), true);
+});
+
+test('text conversations skip passing first-name mentions and nameless ones', async () => {
+  const { store, calls } = fakeStore([GRACE]);
+  const res = await processEntry('t', { kind: 'manual', entryId: 'm1', isConversation: true, participants: ['Liv Cleary'] }, new Date('2026-10-14T12:00:00Z'), store, fakeExtract([
+    mention({ mention: 'Daniel', match: 'new' }),
+    mention({ mention: 'Liv Cleary', full_name: 'Liv Cleary', match: 'new', saw_in_person: '2026-10-02' }),
+    mention({ mention: 'Victoria Litz', full_name: 'Victoria Litz', match: 'new' }),
+    mention({ mention: 'ur dad', match: 'unsure' }),
+  ]));
+  assert.deepEqual(res.created, ['Liv Cleary', 'Victoria Litz']);
+  assert.equal(calls.createPendingMention, undefined);
+  assert.deepEqual(calls.updateLastSeenDate, [['new-Liv Cleary', '2026-10-02']]);
 });

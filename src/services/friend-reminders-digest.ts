@@ -93,3 +93,25 @@ export function friendReminders(today: string, birthdays: BirthdayInput[], event
   // Soonest first; birthdays before other events on the same day.
   return reminders.sort((a, b) => a.daysAway - b.daysAway || (a.kind === b.kind ? 0 : a.kind === 'birthday' ? -1 : 1));
 }
+
+export interface PersonToSee {
+  name: string;
+  lastSeen: string | null; // YYYY-MM-DD
+  latestUpdate: string | null;
+}
+
+/** "Liv Cleary (last saw Sep 2): Moved 10 minutes away" for the Monday "make a plan" list. */
+export function seeSuggestionLines(today: string, people: PersonToSee[]): string[] {
+  return people.map(p => {
+    const when = p.lastSeen
+      ? `last saw ${new Date(`${p.lastSeen}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}, ${Math.round(daysBetween(p.lastSeen, today) / 7)} wks ago`
+      : 'no recent hangout on record';
+    const latest = p.latestUpdate ? `: ${p.latestUpdate.length > 90 ? p.latestUpdate.slice(0, 87) + '...' : p.latestUpdate}` : '';
+    return `• ${p.name} (${when})${latest}`;
+  });
+}
+
+/** Monday? (the "make a plan" list only comes once a week) */
+export function isMonday(date: string): boolean {
+  return new Date(`${date}T12:00:00Z`).getUTCDay() === 1;
+}

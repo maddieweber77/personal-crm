@@ -696,6 +696,32 @@ export async function createPersonFromContact(name: string, phones: string[], bi
   );
 }
 
+/** Latest day Maddie saw this person in person (never moves backwards). */
+export async function updateLastSeenDate(personId: string, day: string): Promise<void> {
+  await getPool().query(
+    `UPDATE people SET last_seen_date = GREATEST(last_seen_date, $1::date), updated_at = NOW() WHERE id = $2`,
+    [day, personId]
+  );
+}
+
+/**
+ * Priority people Maddie hasn't seen in person for at least `days` days
+ * (or ever, as far as we know), longest first, with their latest update.
+ */
+export async function getPeopleToSee(days: number, limit: number): Promise<Array<{ name: string; lastSeen: string | null; latestUpdate: string | null }>> {
+  const result = await getPool().query(
+    `SELECT p.name, to_char(p.last_seen_date, 'YYYY-MM-DD') AS "lastSeen",
+            (SELECT u.update_text FROM person_updates u WHERE u.person_id = p.id ORDER BY u.created_at DESC LIMIT 1) AS "latestUpdate"
+     FROM people p
+     WHERE p.merged_into_id IS NULL AND p.priority_level = 'high'
+       AND (p.last_seen_date IS NULL OR p.last_seen_date < CURRENT_DATE - make_interval(days => $1))
+     ORDER BY p.last_seen_date ASC NULLS FIRST, p.name
+     LIMIT $2`,
+    [toDayCount(days, 21), limit]
+  );
+  return result.rows;
+}
+
 /**
  * Close the database pool (call this when shutting down the server)
  */

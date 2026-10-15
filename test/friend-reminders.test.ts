@@ -60,3 +60,17 @@ test('digest puts friend reminders first, and leaves the section out when empty'
   const failed = buildMorningDigest({ date: TODAY, calendar, friends: { status: 'failed' } });
   assert.match(failed.sms, /Couldn't load birthday\/friend reminders/);
 });
+
+test('Monday digest suggests people to see, email only', async () => {
+  const { seeSuggestionLines, isMonday } = await import('../src/services/friend-reminders-digest');
+  assert.equal(isMonday('2026-10-19'), true);
+  assert.equal(isMonday('2026-10-15'), false);
+  const toSee = [{ name: 'Liv Cleary', lastSeen: '2026-09-07', latestUpdate: 'Moved 10 minutes away' }, { name: 'Katie Weber', lastSeen: null, latestUpdate: null }];
+  assert.deepEqual(seeSuggestionLines('2026-10-19', toSee), [
+    '• Liv Cleary (last saw Sep 7, 6 wks ago): Moved 10 minutes away',
+    '• Katie Weber (no recent hangout on record)',
+  ]);
+  const digest = buildMorningDigest({ date: '2026-10-19', calendar: { status: 'ok', events: [] }, friends: { status: 'ok', reminders: [], toSee } });
+  assert.match(digest.emailText, /MAKE A PLAN THIS WEEK/);
+  assert.doesNotMatch(digest.sms, /Liv Cleary/);
+});

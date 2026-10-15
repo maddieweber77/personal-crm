@@ -1,5 +1,5 @@
 import { CalendarEvent, dateKeyInTimeZone, dayWindow } from './calendar';
-import type { FriendReminder } from './friend-reminders-digest';
+import { seeSuggestionLines, type FriendReminder, type PersonToSee } from './friend-reminders-digest';
 
 /**
  * Builds the text of the morning digest (no sending, no network, no DB),
@@ -26,7 +26,7 @@ export type CalendarStatus =
 
 /** Birthday / important-date reminders, or why we don't have them. */
 export type FriendsStatus =
-  | { status: 'ok'; reminders: FriendReminder[] }
+  | { status: 'ok'; reminders: FriendReminder[]; toSee?: PersonToSee[] }
   | { status: 'failed' } // the database couldn't be read
   | { status: 'skipped' }; // e.g. a preview with no database
 
@@ -56,7 +56,7 @@ interface DigestSection {
 
 export function buildMorningDigest({ date, calendar, friends = { status: 'skipped' } }: MorningDigestInput): MorningDigest {
   // Friends first: they're short and the most likely to need action today.
-  const sections: DigestSection[] = [friendsSection(friends), calendarSection(calendar, date)]
+  const sections: DigestSection[] = [friendsSection(friends), calendarSection(calendar, date), toSeeSection(friends, date)]
     .filter((section): section is DigestSection => section !== null);
 
   // Text message: header, then each section in the space that's left.
@@ -100,6 +100,17 @@ function friendsSection(friends: FriendsStatus): DigestSection | null {
     // At most half the text, so today's calendar still fits.
     smsLines: (maxChars) => fitWithMoreLine(lines.map(l => truncate(l, 120)), Math.min(maxChars, SMS_MAX_CHARS / 2)),
     subjectSummary: friends.reminders.length === 1 ? '1 friend reminder' : `${friends.reminders.length} friend reminders`,
+  };
+}
+
+/** Mondays: important people Maddie hasn't seen in a while. Email only (keeps the text short). */
+function toSeeSection(friends: FriendsStatus, date: string): DigestSection | null {
+  if (friends.status !== 'ok' || !friends.toSee?.length) return null;
+  return {
+    emailHeading: 'MAKE A PLAN THIS WEEK (haven\'t seen in a while)',
+    emailLines: seeSuggestionLines(date, friends.toSee),
+    smsLines: () => [],
+    subjectSummary: `${friends.toSee.length} to see`,
   };
 }
 
