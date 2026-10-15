@@ -31,6 +31,7 @@ const MentionSchema = z.object({
   aliases: z.array(z.string()).describe('Nicknames used for them in the source'),
   relationship: RELATIONSHIP,
   interacted: z.boolean().describe('True only if Maddie talked to, texted, called or saw THIS person'),
+  saw_in_person: z.string().nullable().describe('YYYY-MM-DD of the latest day Maddie was with this person in person, if the source shows it; otherwise null'),
   updates: z.array(z.object({
     update_text: z.string(),
     context: z.string().nullable(),
@@ -54,7 +55,9 @@ export type ExtractedMention = z.infer<typeof MentionSchema>;
 export type Extraction = z.infer<typeof ExtractionSchema>;
 
 // Kept identical on every call so it can be cached.
-const SYSTEM_PROMPT = `You read Maddie's voice journal entries and the notes she texts in, and record what's going on with the people in her life.
+const SYSTEM_PROMPT = `You read Maddie's voice journal entries, the notes she texts in, and her own text conversations with friends and family, and record what's going on with the people in her life.
+
+In a text conversation, lines are "date name: message"; "Maddie" is her. Record facts about the people in her life, not logistics. Skip work and business talk (Sleepy Saturday orders, factories, clients, designs) unless it reveals something personal about the person.
 
 For every person mentioned (not Maddie herself, not public figures or businesses), return one entry.
 
@@ -65,11 +68,14 @@ Matching to the ROSTER (people already in her database):
 - Never guess. A wrong match files private details under the wrong friend; "unsure" just means Maddie gets asked. Only use ids that appear in the roster.
 
 For each person:
-- interacted: true only if Maddie herself talked to, texted, called or saw THIS person (judge each person separately; someone only talked about is false).
+- interacted: true only if Maddie herself talked to, texted, called or saw THIS person (judge each person separately; someone only talked about is false). In a text conversation, the people she's texting with count as interacted.
+- saw_in_person: the latest date the source shows Maddie actually spent time with this person in person (dinner, visit, trip, hangout that happened, not just planned); otherwise null.
 - updates: short, specific facts about their life, written in third person ("Started a new job at Google"). No filler.
 - events: upcoming things worth remembering (birthdays, weddings, trips, interviews, surgeries, other). Resolve relative dates against today's date; if there's no exact date, set event_date to null and put the timing in event_date_approximate.
 - situations: ongoing things where she may want to check in. Severity: high = major life events (death, serious illness, breakup, job loss); medium = challenging but manageable (wedding planning, new job, family stress); low = minor (busy season, small health issue). started_at defaults to today.
-- If nothing new is said about someone, return empty lists for them rather than inventing details.`;
+- If nothing new is said about someone, return empty lists for them rather than inventing details.
+- Record only what is actually said. Never guess at sensitive things (health, sexuality, relationships, money) beyond what was shared.
+- In text conversations, include third parties only when there's something meaningful about them; skip passing mentions.`;
 
 /** Roster as compact lines: id | name | aka | relationship | recent updates. */
 export function formatRoster(roster: RosterPerson[]): string {
@@ -88,7 +94,7 @@ export function formatRoster(roster: RosterPerson[]): string {
 /** Ask Claude who was mentioned and what's new. Throws if Claude fails. */
 export async function extractMentions(
   sourceText: string,
-  sourceKind: 'voice call transcript' | 'text message or screenshot',
+  sourceKind: 'voice call transcript' | 'text message or screenshot' | 'text conversation',
   roster: RosterPerson[],
   today: string // YYYY-MM-DD in Maddie's timezone
 ): Promise<Extraction> {
@@ -135,7 +141,9 @@ const NOT_A_NAME_START = new Set(['my', 'our', 'her', 'his', 'their', 'the', 'a'
 export function looksLikeName(text: string): boolean {
   const trimmed = text.trim();
   const first = trimmed.split(/\s+/)[0]?.toLowerCase() ?? '';
-  return trimmed.length > 0 && !NOT_A_NAME_START.has(first) && /[A-Z]/.test(trimmed);
+  // "Davis's little brother" describes someone; it isn't their name.
+  const describesSomeone = /['’]s\s+\w/.test(trimmed);
+  return trimmed.length > 0 && !NOT_A_NAME_START.has(first) && !describesSomeone && /[A-Z]/.test(trimmed);
 }
 
 /** Roster people this name could plausibly be: same first name, or a matching alias. */

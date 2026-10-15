@@ -1,9 +1,9 @@
 import { readFile } from 'fs/promises';
 import { dateKeyInTimeZone, fetchCalendarIcs, getEventsForDay, redactSecret } from './calendar';
 import { buildMorningDigest, CalendarStatus, DIGEST_TIME_ZONE, FriendsStatus, MorningDigest } from './morning-digest';
-import { friendReminders } from './friend-reminders-digest';
+import { friendReminders, isMonday } from './friend-reminders-digest';
 import { sendEmail, sendSms } from './notify';
-import { claimDigest, recordDigestResult, releaseDigestClaim, getBirthdays, getDatedFriendEvents } from '../database/client';
+import { claimDigest, recordDigestResult, releaseDigestClaim, getBirthdays, getDatedFriendEvents, getPeopleToSee } from '../database/client';
 
 /**
  * The morning digest job: load today's calendar, build the digest, send it
@@ -110,11 +110,13 @@ async function loadFriends(date: string): Promise<FriendsStatus> {
   try {
     const tomorrow = new Date(`${date}T12:00:00Z`);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    const [birthdays, events] = await Promise.all([
+    const [birthdays, events, toSee] = await Promise.all([
       getBirthdays(),
       getDatedFriendEvents(date, tomorrow.toISOString().slice(0, 10)),
+      // Once a week: up to 3 priority people not seen in person for 3+ weeks.
+      isMonday(date) ? getPeopleToSee(21, 3) : Promise.resolve([]),
     ]);
-    return { status: 'ok', reminders: friendReminders(date, birthdays, events) };
+    return { status: 'ok', reminders: friendReminders(date, birthdays, events), toSee };
   } catch (error) {
     console.error(`Couldn't load friend reminders: ${error instanceof Error ? error.message : String(error)}`);
     return { status: 'failed' };
