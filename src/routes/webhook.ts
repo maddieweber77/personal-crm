@@ -22,6 +22,18 @@ import {
 
 const router = Router();
 
+// Twilio's built-in opt-out / opt-in / help keywords for toll-free numbers.
+// Twilio replies to these on its own, so the app stays quiet.
+const CARRIER_KEYWORDS = new Set([
+  'STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT', 'REVOKE',
+  'START', 'UNSTOP', 'YES', 'HELP', 'INFO',
+]);
+
+/** True only when the whole text is exactly one keyword ("stop", " Help "), not "stop by Sarah's". */
+export function isCarrierKeyword(body: string): boolean {
+  return CARRIER_KEYWORDS.has(body.trim().toUpperCase());
+}
+
 // Every /twilio/* route must come from Twilio itself (signed request).
 // The From-number checks below only work once the request is known to be real.
 router.use('/twilio', requireTwilioSignature);
@@ -252,6 +264,13 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
     if (from !== ALLOWED_NUMBER) {
       console.log(`⛔ Rejected SMS from unauthorized number: ${from}`);
       res.status(200).send(); // Respond with empty to prevent retries
+      return;
+    }
+
+    // STOP / START / HELP are answered by Twilio itself; don't also send an AI reply.
+    if (mediaUrls.length === 0 && isCarrierKeyword(body)) {
+      console.log('Carrier keyword received - Twilio handles the reply');
+      res.status(200).send();
       return;
     }
 
