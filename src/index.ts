@@ -6,6 +6,7 @@ dotenv.config();
 import express from 'express';
 import cron from 'node-cron';
 import webhookRouter from './routes/webhook';
+import smsProgramRouter from './routes/sms-program';
 import { closePool } from './database/client';
 import { sendCheckInReminder } from './services/reminder';
 import { checkAndSendFriendReminders } from './services/friend-reminders';
@@ -25,6 +26,9 @@ app.get('/health', (req, res) => {
 
 // Mount webhook routes
 app.use('/api', webhookRouter);
+
+// Public SMS program pages (/sms, /sms/terms, /sms/privacy) for toll-free verification
+app.use(smsProgramRouter);
 
 // Start the server
 const server = app.listen(PORT, () => {

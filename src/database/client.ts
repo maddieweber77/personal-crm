@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { planMerge, type MergeablePerson } from '../services/merge-plan';
+import type { RosterPerson } from '../services/person-resolver';
 import type {
   Person,
   VoiceEntry,
@@ -37,10 +39,13 @@ function getPool(): Pool {
 export async function findPersonByNameOrAlias(
   nameOrAlias: string
 ): Promise<Person | null> {
+  // Both sides lowercased (aliases used to be compared against the raw name,
+  // so "Gracie" never matched the alias "gracie"). Merged duplicates are skipped.
   const result = await getPool().query<Person>(
     `SELECT * FROM people
-     WHERE LOWER(name) = LOWER($1)
-     OR $1 = ANY(SELECT LOWER(unnest(aliases)))
+     WHERE merged_into_id IS NULL
+       AND (LOWER(name) = LOWER($1)
+            OR LOWER($1) = ANY(SELECT LOWER(unnest(aliases))))
      LIMIT 1`,
     [nameOrAlias]
   );
@@ -84,20 +89,26 @@ export async function createVoiceEntry(
   return result.rows[0];
 }
 
+/** Where an update came from: a phone call or a texted note (exactly one is set). */
+export interface UpdateSource {
+  voiceEntryId: string | null;
+  manualEntryId: string | null;
+}
+
 /**
  * Create a new person update
  */
 export async function createPersonUpdate(
   personId: string,
-  voiceEntryId: string,
+  source: UpdateSource,
   updateText: string,
   context: string | null
 ): Promise<PersonUpdate> {
   const result = await getPool().query<PersonUpdate>(
-    `INSERT INTO person_updates (person_id, voice_entry_id, update_text, context)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO person_updates (person_id, voice_entry_id, manual_entry_id, update_text, context)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [personId, voiceEntryId, updateText, context]
+    [personId, source.voiceEntryId, source.manualEntryId, updateText, context]
   );
 
   return result.rows[0];
@@ -259,11 +270,14 @@ export async function updateLastContactDate(
   personId: string,
   contactDate: Date
 ): Promise<void> {
+  // Calendar date in New York (a 9pm call is still "today", not tomorrow in UTC),
+  // and never move it backwards when an older note is processed late.
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(contactDate);
   await getPool().query(
     `UPDATE people
-     SET last_contact_date = $1, updated_at = NOW()
+     SET last_contact_date = GREATEST(last_contact_date, $1::date), updated_at = NOW()
      WHERE id = $2`,
-    [contactDate, personId]
+    [day, personId]
   );
 }
 
@@ -355,7 +369,7 @@ export async function getPeopleNeedingContact(
   const result = await getPool().query<Person>(
     `SELECT *
      FROM people
-     WHERE (
+     WHERE merged_into_id IS NULL AND (
        (priority_level = 'high' AND (last_contact_date IS NULL OR last_contact_date < CURRENT_DATE - make_interval(days => $1)))
        OR
        (priority_level = 'normal' AND (last_contact_date IS NULL OR last_contact_date < CURRENT_DATE - make_interval(days => $2)))
@@ -444,6 +458,139 @@ export async function getPersonSituations(personId: string): Promise<FriendSitua
   );
 
   return result.rows;
+}
+
+/**
+ * Everyone Claude can match a mention to: live (not merged) people with
+ * their latest 3 updates for context.
+ */
+export async function getRoster(): Promise<RosterPerson[]> {
+  const result = await getPool().query<RosterPerson>(
+    `SELECT p.id, p.name, p.aliases, p.relationship,
+            COALESCE((SELECT array_agg(u.update_text ORDER BY u.created_at DESC)
+                      FROM (SELECT update_text, created_at FROM person_updates
+                            WHERE person_id = p.id ORDER BY created_at DESC LIMIT 3) u), '{}') AS recent
+     FROM people p
+     WHERE p.merged_into_id IS NULL
+     ORDER BY p.name`
+  );
+  return result.rows;
+}
+
+/** Add nicknames to a person (skips ones they already have, any capitalization). */
+export async function addAliases(personId: string, aliases: string[]): Promise<void> {
+  if (aliases.length === 0) return;
+  await getPool().query(
+    `UPDATE people
+     SET aliases = aliases || ARRAY(
+           SELECT DISTINCT a FROM unnest($2::text[]) a
+           WHERE LOWER(a) <> ALL(SELECT LOWER(unnest(aliases))) AND LOWER(a) <> LOWER(name)),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [personId, aliases]
+  );
+}
+
+/** Park a mention we couldn't pin to one person until Maddie says who it was. */
+export async function createPendingMention(
+  mention: string,
+  candidateIds: string[],
+  extracted: unknown,
+  source: { kind: 'voice' | 'manual'; entryId: string },
+  occurredAt: Date
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO pending_mentions (mention, candidate_ids, extracted, source_kind, source_entry_id, occurred_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [mention, candidateIds, JSON.stringify(extracted), source.kind, source.entryId, occurredAt]
+  );
+}
+
+/** Live people with the fields the Contacts matcher needs. */
+export async function getPeopleForMatching(): Promise<Array<Pick<Person, 'id' | 'name' | 'aliases' | 'phone_numbers' | 'birthday'>>> {
+  const result = await getPool().query(
+    `SELECT id, name, aliases, phone_numbers, birthday FROM people WHERE merged_into_id IS NULL ORDER BY name`
+  );
+  return result.rows;
+}
+
+/**
+ * Save what Contacts knows about a person. A new full name keeps the old
+ * name as a nickname ("Grace" -> "Grace Smith", aka Grace).
+ */
+export async function setContactInfo(
+  personId: string,
+  info: { fullName: string | null; phoneNumbers: string[]; birthday: string | null }
+): Promise<void> {
+  await getPool().query(
+    `UPDATE people
+     SET aliases = CASE WHEN $2::text IS NOT NULL AND LOWER($2) <> LOWER(name)
+                             AND LOWER(name) <> ALL(SELECT LOWER(unnest(aliases)))
+                        THEN aliases || name ELSE aliases END,
+         name = COALESCE($2, name),
+         phone_numbers = ARRAY(SELECT DISTINCT unnest(phone_numbers || $3::text[])),
+         birthday = COALESCE(birthday, $4::date),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [personId, info.fullName, info.phoneNumbers, info.birthday]
+  );
+}
+
+/**
+ * Merge a duplicate into the person to keep. Everything about the duplicate
+ * moves over; the duplicate row is kept (merged_into_id set), not deleted.
+ * All or nothing: runs in one transaction.
+ */
+export async function mergePeople(survivorId: string, duplicateId: string): Promise<{ moved: Record<string, number> }> {
+  if (survivorId === duplicateId) throw new Error('Cannot merge a person into themselves');
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const rows = (await client.query<MergeablePerson & { merged_into_id: string | null }>(
+      `SELECT id, name, aliases, relationship, priority_level, last_contact_date, phone_numbers, birthday, merged_into_id
+       FROM people WHERE id = ANY($1::uuid[]) FOR UPDATE`,
+      [[survivorId, duplicateId]]
+    )).rows;
+    const survivor = rows.find(r => r.id === survivorId);
+    const duplicate = rows.find(r => r.id === duplicateId);
+    if (!survivor || !duplicate) throw new Error('Person not found');
+    if (survivor.merged_into_id || duplicate.merged_into_id) throw new Error('One of these people was already merged');
+
+    const merged = planMerge(survivor, duplicate);
+    await client.query(
+      `UPDATE people SET aliases = $2, relationship = $3, priority_level = $4, last_contact_date = $5,
+              phone_numbers = $6, birthday = $7, updated_at = NOW()
+       WHERE id = $1`,
+      [survivorId, merged.aliases, merged.relationship, merged.priority_level, merged.last_contact_date,
+       merged.phone_numbers, merged.birthday]
+    );
+
+    const moved: Record<string, number> = {};
+    for (const table of ['person_updates', 'friend_events', 'friend_situations', 'reminder_log']) {
+      const res = await client.query(`UPDATE ${table} SET person_id = $1 WHERE person_id = $2`, [survivorId, duplicateId]);
+      moved[table] = res.rowCount ?? 0;
+    }
+    await client.query(
+      `UPDATE pending_mentions SET resolved_person_id = $1 WHERE resolved_person_id = $2`,
+      [survivorId, duplicateId]
+    );
+    await client.query(
+      `UPDATE pending_mentions SET candidate_ids = array_replace(candidate_ids, $2, $1)
+       WHERE $2 = ANY(candidate_ids)`,
+      [survivorId, duplicateId]
+    );
+    await client.query(
+      `UPDATE people SET merged_into_id = $1, updated_at = NOW() WHERE id = $2`,
+      [survivorId, duplicateId]
+    );
+    await client.query('COMMIT');
+    return { moved };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
