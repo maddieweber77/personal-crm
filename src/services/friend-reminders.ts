@@ -1,4 +1,4 @@
-import sendgrid from '@sendgrid/mail';
+import { sendEmail } from './notify';
 import {
   getUpcomingEvents,
   getActiveSituations,
@@ -233,28 +233,7 @@ function formatLastContactReminder(
  * Send reminder via email
  */
 async function sendEmailReminder(subject: string, message: string): Promise<void> {
-  try {
-    const sendgridApiKey = process.env.SENDGRID_API_KEY;
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'maddieweber7@gmail.com';
-    const toEmail = 'maddieweber7@gmail.com';
-
-    if (!sendgridApiKey) {
-      console.error('⚠️ SendGrid API key not configured - email disabled');
-      return;
-    }
-
-    sendgrid.setApiKey(sendgridApiKey);
-
-    await sendgrid.send({
-      from: fromEmail,
-      to: toEmail,
-      subject: `CRM: ${subject}`,
-      text: message,
-    });
-  } catch (error) {
-    // Message only: SendGrid errors can carry the request's auth header.
-    console.error('Failed to send email reminder:', error instanceof Error ? error.message : String(error));
-  }
+  await sendEmail(`CRM: ${subject}`, message);
 }
 
 /**

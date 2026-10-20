@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import twilio from 'twilio';
-import sendgrid from '@sendgrid/mail';
+import { sendEmail } from '../services/notify';
 import { downloadRecording } from '../services/audio-downloader';
 import { transcribeAudio } from '../services/transcription';
 import { generateDailySummary } from '../services/llm';
@@ -248,43 +248,10 @@ router.post('/twilio/sms', async (req: Request, res: Response) => {
 });
 
 /**
- * Send response via email using SendGrid
+ * Send the query + answer to Maddie by email (permanent record).
  */
 async function sendEmailFallback(query: string, response: string): Promise<void> {
-  try {
-    const sendgridApiKey = process.env.SENDGRID_API_KEY;
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'maddieweber7@gmail.com';
-    const toEmail = 'maddieweber7@gmail.com';
-
-    console.log(`Attempting to send email...`);
-    console.log(`From: ${fromEmail}`);
-    console.log(`To: ${toEmail}`);
-    console.log(`API Key configured: ${sendgridApiKey ? 'Yes' : 'No'}`);
-
-    if (!sendgridApiKey) {
-      console.error('⚠️ SendGrid API key not configured - email disabled');
-      console.log('To enable email, set SENDGRID_API_KEY in Railway');
-      return;
-    }
-
-    // Initialize SendGrid
-    sendgrid.setApiKey(sendgridApiKey);
-
-    // Send email via SendGrid API
-    const result = await sendgrid.send({
-      from: fromEmail,
-      to: toEmail,
-      subject: `CRM Query: "${query}"`,
-      text: `Your Query:\n${query}\n\n---\n\nResponse:\n${response}`,
-    });
-
-    console.log(`✓ SendGrid response:`, JSON.stringify(result[0], null, 2));
-  } catch (error: any) {
-    console.error('❌ Failed to send email - FULL ERROR:');
-    console.error('Error message:', error.message);
-    console.error('Error code:', error.code);
-    console.error('Error response:', JSON.stringify(error.response?.body, null, 2));
-  }
+  await sendEmail(`CRM Query: "${query}"`, `Your Query:\n${query}\n\n---\n\nResponse:\n${response}`);
 }
 
 export default router;
